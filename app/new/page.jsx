@@ -132,12 +132,12 @@ export default function NewBook() {
           const res = await fetch('/api/scan', { method: 'POST', body: form });
           if (!res.ok) throw new Error(await res.text());
           const { spreads: batchSpreads } = await res.json();
-          spreads.push(...batchSpreads);
+          batchSpreads.forEach((s, j) => spreads.push({ ...s, photo: batch[j] || null }));
         } catch (e) {
           console.error('batch failed', numberCursor, e);
-          batch.forEach((_, j) => spreads.push({
+          batch.forEach((f, j) => spreads.push({
             number: numberCursor + j, englishText: '', sceneDescription: '',
-            textUncertain: true, error: String(e.message || e).slice(0, 200),
+            textUncertain: true, error: String(e.message || e).slice(0, 200), photo: f,
           }));
         }
         numberCursor += batch.length;
@@ -222,18 +222,35 @@ export default function NewBook() {
       if (!confirm('아직 읽어줄 문장이 하나도 없어요. 이대로 저장할까요?')) return;
     }
     setBusy('저장하고 있어요...');
+    const cleanSpreads = book.spreads.map(({ photo, error, textUncertain, detectedPage, ...rest }) => rest);
     const { data, error } = await supabase
       .from('books')
       .insert({
         title: book.title.trim() || 'Untitled Story',
         themes: book.themes,
         overall_vocab: book.overallVocab,
-        spreads: book.spreads,
+        spreads: cleanSpreads,
       })
       .select()
       .single();
+    if (error) { setBusy(''); setError(error.message); return; }
+
+    // Photos are stored separately, one file per spread, so Stage 1 can
+    // show the actual page while it reads — not just the extracted text.
+    const withPhotos = book.spreads.filter((s) => s.photo);
+    for (let i = 0; i < withPhotos.length; i++) {
+      setBusy(`사진 저장 중... (${i + 1}/${withPhotos.length})`);
+      const s = withPhotos[i];
+      try {
+        await supabase.storage
+          .from('book-photos')
+          .upload(`${data.id}/${s.number}.jpg`, s.photo, { contentType: 'image/jpeg', upsert: true });
+      } catch (e) {
+        console.error('photo upload failed', s.number, e);
+      }
+    }
+
     setBusy('');
-    if (error) { setError(error.message); return; }
     router.push(`/book/${data.id}`);
   }
 
