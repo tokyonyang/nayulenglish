@@ -13,7 +13,9 @@ export async function POST(req) {
     }
     const data = await chatJSON({
       messages: [{ role: 'user', content: enrichmentPrompt(spreads) }],
-      maxTokens: 2500,
+      // Scale with page count — voiceDirection made each spread's output
+      // noticeably longer, so a fixed cap was truncating big books.
+      maxTokens: Math.min(12000, 1200 + spreads.length * 260),
       temperature: 0.6,
     });
     return NextResponse.json(data);
