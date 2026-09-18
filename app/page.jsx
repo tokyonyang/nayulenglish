@@ -63,6 +63,9 @@ export default function Home() {
                 <Link href={`/book/${b.id}`} style={{ flex: 1, textDecoration: 'none' }}>
                   <button className="btn">오늘 세션 시작 →</button>
                 </Link>
+                <Link href={`/book/${b.id}/edit`}>
+                  <button className="btn-text">편집</button>
+                </Link>
                 <button className="btn-text" onClick={() => remove(b.id)}>삭제</button>
               </div>
             </div>
