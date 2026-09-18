@@ -110,33 +110,46 @@ export default function Session() {
   useEffect(() => { bottom.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, thinking]);
 
   /* ---------- stage 1 ---------- */
-  async function readCurrent() {
-    const s = book.spreads[spreadIndex];
-    if (!s) return;
-    setReading(true);
-    await speakLines(spreadLines(s), { slow, muted, cacheable: true, voice });
-    setReading(false);
-    if (autoPlay) await new Promise((r) => setTimeout(r, 900)); // a beat to look at the page before it turns
-    setSpreadIndex((i) => i + 1);
-  }
+  const autoPlayRef = useRef(false);
+  const autoPlayBusy = useRef(false);
+  useEffect(() => { autoPlayRef.current = autoPlay; }, [autoPlay]);
 
-  async function replayLast() {
-    const s = book.spreads[spreadIndex - 1];
+  async function readSpreadAt(i) {
+    const s = book.spreads[i];
     if (!s) return;
     setReading(true);
     await speakLines(spreadLines(s), { slow, muted, cacheable: true, voice });
     setReading(false);
   }
 
-  // Auto-play: once a spread finishes, this re-fires and reads the next
-  // one on its own — no page-turn tap needed. Turning the toggle off (or
-  // running out of spreads) naturally stops the chain.
+  function goTo(i) {
+    stopSpeaking();
+    if (autoPlay) toggleAutoPlay(); // manual navigation takes over from auto-play
+    setSpreadIndex(Math.max(0, Math.min(book.spreads.length - 1, i)));
+  }
+
+  // Auto-play: reads the current page, pauses a beat, then turns to the
+  // next one on its own. Stops itself at the last page. A ref-guarded lock
+  // (rather than relying on the `reading` state, which can lag a render
+  // behind an awaited step) keeps this from double-firing on itself.
   useEffect(() => {
-    if (screen !== 'stage1' || !autoPlay || reading) return;
-    if (!book || spreadIndex >= book.spreads.length) return;
-    readCurrent();
+    if (screen !== 'stage1' || !autoPlay || !book || autoPlayBusy.current) return;
+    if (spreadIndex >= book.spreads.length) return;
+    autoPlayBusy.current = true;
+    (async () => {
+      await readSpreadAt(spreadIndex);
+      if (!autoPlayRef.current) { autoPlayBusy.current = false; return; }
+      if (spreadIndex >= book.spreads.length - 1) {
+        autoPlayBusy.current = false;
+        toggleAutoPlay();
+        return;
+      }
+      await new Promise((r) => setTimeout(r, 900)); // a beat to look at the page before it turns
+      autoPlayBusy.current = false;
+      if (autoPlayRef.current) setSpreadIndex((i) => Math.min(book.spreads.length - 1, i + 1));
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoPlay, reading, spreadIndex, screen, book]);
+  }, [autoPlay, spreadIndex, screen, book]);
 
   /* ---------- stage 2 / 3 ---------- */
   const askClaude = useCallback(async (n, instructions, turns, opts = {}) => {
@@ -352,9 +365,9 @@ export default function Session() {
   );
 
   if (screen === 'stage1') {
-    const done = spreadIndex >= book.spreads.length;
-    const current = book.spreads[Math.min(spreadIndex, book.spreads.length - 1)];
-    const shown = spreadIndex === 0 ? null : book.spreads[spreadIndex - 1];
+    const cur = book.spreads[spreadIndex];
+    const isFirst = spreadIndex === 0;
+    const isLast = spreadIndex === book.spreads.length - 1;
     return (
       <>
         <div className="topbar">
@@ -382,35 +395,41 @@ export default function Session() {
 
         <div className="dots">
           {book.spreads.map((s, i) => (
-            <span key={s.number} className={`dot ${i < spreadIndex ? 'done' : ''} ${i === spreadIndex ? 'now' : ''}`} />
+            <button
+              key={s.number}
+              className={`dot ${i === spreadIndex ? 'now' : ''}`}
+              style={{ padding: 0, border: 'none' }}
+              aria-label={`펼침면 ${s.number}로 이동`}
+              onClick={() => goTo(i)}
+            />
           ))}
         </div>
 
         <div className="stage-card">
-          {shown ? (
-            <>
-              {(() => {
-                const photoUrl = spreadPhotoUrl(book.id, shown.number);
-                return photoUrl ? (
-                  <img
-                    src={photoUrl}
-                    alt=""
-                    className="stage-photo"
-                    onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                  />
-                ) : null;
-              })()}
-              <div className="stage-num">펼침면 {shown.number}</div>
-              <div className="stage-text">{shown.englishText || '(텍스트 없음)'}</div>
-              {shown.sceneDescription && <div className="spread-scene">{shown.sceneDescription}</div>}
-            </>
-          ) : (
-            <div className="hint" style={{ textAlign: 'center', margin: 0 }}>버튼을 눌러서 첫 펼침면을 시작해요 📖</div>
-          )}
+          {(() => {
+            const photoUrl = spreadPhotoUrl(book.id, cur.number);
+            return photoUrl ? (
+              <img
+                src={photoUrl}
+                alt=""
+                className="stage-photo"
+                onError={(e) => { e.currentTarget.style.display = 'none'; }}
+              />
+            ) : null;
+          })()}
+          <div className="stage-num">펼침면 {cur.number} / {book.spreads.length}</div>
+          <div className="stage-text">{cur.englishText || '(텍스트 없음)'}</div>
+          {cur.sceneDescription && <div className="spread-scene">{cur.sceneDescription}</div>}
         </div>
 
         <div className="row">
-          <button className="btn-ghost" onClick={replayLast} disabled={reading || spreadIndex === 0}>🔊 다시 듣기</button>
+          <button className="btn-ghost" onClick={() => goTo(spreadIndex - 1)} disabled={isFirst}>◀ 이전 페이지</button>
+          <button className="btn-ghost" onClick={() => goTo(spreadIndex + 1)} disabled={isLast}>다음 페이지 ▶</button>
+        </div>
+        <div className="row" style={{ marginTop: 8 }}>
+          <button className="btn-ghost" onClick={() => readSpreadAt(spreadIndex)} disabled={reading}>
+            {reading ? '🔊 읽는 중...' : '🔊 이 페이지 읽어주기'}
+          </button>
           <button className="btn-ghost" onClick={() => setSlow((s) => !s)}>{slow ? '🐢 천천히 (켜짐)' : '🐢 천천히 읽기'}</button>
         </div>
         <div className="row" style={{ marginTop: 8 }}>
@@ -419,21 +438,7 @@ export default function Session() {
           </button>
         </div>
 
-        {done ? (
-          <button className="btn" style={{ marginTop: 14 }} onClick={() => startStage(2)}>책 다 읽었어요! 이야기 시작하기 →</button>
-        ) : autoPlay ? (
-          <div className="hint" style={{ textAlign: 'center', marginTop: 14 }}>
-            {reading ? '🔊 자동으로 읽는 중...' : '다음 페이지로 넘어가는 중...'}
-          </div>
-        ) : (
-          <button className="btn" style={{ marginTop: 14 }} onClick={readCurrent} disabled={reading}>
-            {reading ? '읽는 중...' : spreadIndex === 0 ? '펼침면 보기 ▶' : `다음 펼침면 ▶ (${current.number})`}
-          </button>
-        )}
-
-        <button className="btn-text" style={{ display: 'block', margin: '16px auto 0' }} onClick={() => startStage(2)}>
-          책 읽기 건너뛰고 대화하러 가기 →
-        </button>
+        <button className="btn" style={{ marginTop: 14 }} onClick={() => startStage(2)}>이야기 시작하기 →</button>
       </>
     );
   }
