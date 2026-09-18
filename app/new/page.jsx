@@ -142,6 +142,7 @@ export default function NewBook() {
         }
         numberCursor += batch.length;
         done += batch.length;
+        if (done < converted.length) await new Promise((r) => setTimeout(r, 400));
       }
 
       const { spreads: ordered, autoSorted, unplacedCount } = autoOrderSpreads(spreads);
@@ -214,6 +215,44 @@ export default function NewBook() {
     } finally {
       setBusy('');
     }
+  }
+
+  async function retryFailed() {
+    const failed = book.spreads.filter((s) => s.error && s.photo);
+    if (!failed.length) return;
+    setError('');
+    setNote('');
+    const updated = [...book.spreads];
+    for (let i = 0; i < failed.length; i++) {
+      const s = failed[i];
+      setBusy(`실패한 페이지 다시 시도 중... (${i + 1}/${failed.length})`);
+      try {
+        const form = new FormData();
+        form.append('photos', s.photo);
+        form.append('start', String(s.number));
+        const res = await fetch('/api/scan', { method: 'POST', body: form });
+        if (!res.ok) throw new Error(await res.text());
+        const { spreads: result } = await res.json();
+        const r = result[0];
+        const idx = updated.findIndex((x) => x.number === s.number);
+        if (idx !== -1 && r) {
+          updated[idx] = {
+            ...updated[idx],
+            englishText: r.englishText || updated[idx].englishText,
+            sceneDescription: r.sceneDescription || updated[idx].sceneDescription,
+            textUncertain: Boolean(r.textUncertain),
+            error: r.error || null,
+          };
+        }
+      } catch (e) {
+        console.error('retry failed', s.number, e);
+      }
+      if (i < failed.length - 1) await new Promise((r) => setTimeout(r, 500));
+    }
+    setBook((b) => ({ ...b, spreads: updated }));
+    const stillFailed = updated.filter((s) => s.error).length;
+    setNote(stillFailed ? `${stillFailed}장은 여전히 실패했어요. 직접 입력해주시거나 다시 시도해주세요.` : '모두 성공했어요!');
+    setBusy('');
   }
 
   async function save() {
@@ -303,6 +342,9 @@ export default function NewBook() {
           </div>
         ))}
 
+        {book.spreads.some((s) => s.error) && (
+          <button className="btn-ghost" onClick={retryFailed}>⟳ 실패한 페이지만 다시 시도</button>
+        )}
         <button
           className="btn-ghost"
           onClick={() => setBook({ ...book, spreads: [...book.spreads, blankSpread(book.spreads.length + 1)] })}
