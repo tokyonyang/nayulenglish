@@ -20,8 +20,7 @@ function blankSpread(number, englishText = '') {
   };
 }
 
-/** Downscale to JPEG so huge iPhone photos (and HEIC on Safari) upload reliably. */
-async function toJpeg(file, maxSide = 1600) {
+async function convertOnce(file, maxSide, quality) {
   try {
     const bmp = await createImageBitmap(file);
     const scale = Math.min(1, maxSide / Math.max(bmp.width, bmp.height));
@@ -30,12 +29,36 @@ async function toJpeg(file, maxSide = 1600) {
     canvas.height = Math.round(bmp.height * scale);
     canvas.getContext('2d').drawImage(bmp, 0, 0, canvas.width, canvas.height);
     bmp.close?.();
-    const blob = await new Promise((r) => canvas.toBlob(r, 'image/jpeg', 0.9));
-    if (blob) return new File([blob], 'spread.jpg', { type: 'image/jpeg' });
+    return await new Promise((r) => canvas.toBlob(r, 'image/jpeg', quality));
   } catch (e) {
-    console.error('convert failed, sending original', e);
+    console.error('convert failed', e);
+    return null;
   }
-  return file;
+}
+
+// Vercel Functions cap request bodies around 4.5MB. Modern phone cameras
+// routinely shoot 8MB+ originals, so every photo gets compressed down to a
+// safe per-image size first, then batches are packed by *actual* converted
+// size (not a fixed photo count) so any mix of book pages fits reliably.
+const PER_IMAGE_CAP_BYTES = 1.2 * 1024 * 1024;
+const BATCH_BUDGET_BYTES = 3.2 * 1024 * 1024;
+
+/** Downscale to JPEG so huge iPhone photos (and HEIC on Safari) upload
+ *  reliably, shrinking further in steps until it's safely under the cap —
+ *  one pass isn't always enough for a very detailed high-res original. */
+async function toJpegCapped(file) {
+  let side = 1500;
+  let quality = 0.85;
+  let blob = await convertOnce(file, side, quality);
+  if (!blob) return file; // canvas failed entirely — send original, server tolerates it
+
+  for (let attempt = 0; attempt < 4 && blob.size > PER_IMAGE_CAP_BYTES; attempt++) {
+    quality = Math.max(0.5, quality - 0.15);
+    side = Math.max(700, Math.round(side * 0.8));
+    const next = await convertOnce(file, side, quality);
+    if (next) blob = next;
+  }
+  return new File([blob], 'spread.jpg', { type: 'image/jpeg' });
 }
 
 export default function NewBook() {
@@ -84,13 +107,52 @@ export default function NewBook() {
 
   async function scanPhotos() {
     setError('');
-    setBusy(`사진 ${files.length}장을 읽고 있어요... (1~2분 걸릴 수 있어요)`);
     try {
-      const form = new FormData();
-      for (const f of files) form.append('photos', await toJpeg(f));
-      const res = await fetch('/api/scan', { method: 'POST', body: form });
-      if (!res.ok) throw new Error(await res.text());
-      const { spreads } = await res.json();
+      const converted = [];
+      for (let i = 0; i < files.length; i++) {
+        setBusy(`사진 압축 중... (${i + 1}/${files.length})`);
+        converted.push(await toJpegCapped(files[i]));
+      }
+
+      // Pack by actual converted size, not a fixed photo count — however
+      // many fit under the budget go in one request.
+      const batches = [];
+      let cur = [];
+      let curBytes = 0;
+      for (const f of converted) {
+        if (cur.length && curBytes + f.size > BATCH_BUDGET_BYTES) {
+          batches.push(cur);
+          cur = [];
+          curBytes = 0;
+        }
+        cur.push(f);
+        curBytes += f.size;
+      }
+      if (cur.length) batches.push(cur);
+
+      const spreads = [];
+      let done = 0;
+      let numberCursor = 1;
+      for (const batch of batches) {
+        setBusy(`사진 읽는 중... (${done + batch.length}/${converted.length}장)`);
+        const form = new FormData();
+        batch.forEach((f) => form.append('photos', f));
+        form.append('start', String(numberCursor));
+        try {
+          const res = await fetch('/api/scan', { method: 'POST', body: form });
+          if (!res.ok) throw new Error(await res.text());
+          const { spreads: batchSpreads } = await res.json();
+          spreads.push(...batchSpreads);
+        } catch (e) {
+          console.error('batch failed', numberCursor, e);
+          batch.forEach((_, j) => spreads.push({
+            number: numberCursor + j, englishText: '', sceneDescription: '',
+            textUncertain: true, error: String(e.message || e).slice(0, 200),
+          }));
+        }
+        numberCursor += batch.length;
+        done += batch.length;
+      }
 
       const base = spreads.map((s) => ({ ...blankSpread(s.number, s.englishText), ...s }));
       setBusy('책 전체 이야기를 정리하고 있어요...');
