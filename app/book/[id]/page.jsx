@@ -7,7 +7,7 @@ import { supabase, supabaseReady } from '@/lib/supabase';
 import { DAY_THEMES, stage2Instructions, stage3Instructions } from '@/lib/prompts';
 import {
   speakLines, stopSpeaking, spreadLines, chatLines, TTS_VOICES,
-  recordingSupported, startRecording, stopRecordingAndTranscribe,
+  recordingSupported, startRecording, stopRecordingAndTranscribe, stopRecordingAsWav,
 } from '@/lib/audio';
 import {
   tally, bestLevelLabel, pairStats, transcriptSummary, truncateMiddle, todayStr,
@@ -139,19 +139,29 @@ export default function Session() {
   }, [autoPlay, reading, spreadIndex, screen, book]);
 
   /* ---------- stage 2 / 3 ---------- */
-  const askClaude = useCallback(async (n, instructions, turns, childText) => {
+  const askClaude = useCallback(async (n, instructions, turns, opts = {}) => {
     setThinking(true);
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ instructions, turns }),
+        body: JSON.stringify({ instructions, turns, audio: opts.audio }),
       });
       if (!res.ok) throw new Error(await res.text());
       const d = await res.json();
       const speak = String(d.speak || '').trim() || '...';
-
       const st = stage.current[n];
+
+      // Text turns are already pushed into `turns` by the caller before this
+      // runs. Audio turns aren't — we only learn what she said once the
+      // model transcribes it, so we add her bubble here, right before ours.
+      let childText = opts.childText ?? null;
+      if (opts.audio) {
+        childText = String(d.childTranscript || '').trim() || '(음성을 알아듣지 못했어요)';
+        st.turns.push({ role: 'user', content: childText });
+        setMessages((m) => [...m, { role: 'child', text: childText }]);
+      }
+
       st.turns.push({ role: 'assistant', content: speak });
       st.log.push({
         questionType: d.questionType || null,
@@ -163,7 +173,7 @@ export default function Session() {
         invitedRepeat: !!d.invitedRepeat,
         koreanAssistUsed: !!d.koreanAssistUsed,
         sceneRef: typeof d.sceneRef === 'number' ? d.sceneRef : null,
-        childText: childText ?? null,
+        childText,
       });
 
       setMessages((m) => [...m, { role: 'assistant', text: speak }]);
@@ -199,7 +209,7 @@ export default function Session() {
     setWrapUp(false);
     setElapsed(0);
     setScreen('chat');
-    await askClaude(n, instructionsFor(n), [{ role: 'user', content: '(시작해주세요)' }], null);
+    await askClaude(n, instructionsFor(n), [{ role: 'user', content: '(시작해주세요)' }], {});
   }
 
   async function send(text) {
@@ -210,17 +220,34 @@ export default function Session() {
     setMessages((m) => [...m, { role: 'child', text: t }]);
     setInput('');
     stopSpeaking();
-    await askClaude(stageNum, instructionsFor(stageNum), st.turns, t);
+    await askClaude(stageNum, instructionsFor(stageNum), st.turns, { childText: t });
+  }
+
+  async function sendAudio(base64Wav) {
+    if (thinking) return;
+    stopSpeaking();
+    const st = stage.current[stageNum];
+    // turns does NOT yet include this turn — askClaude adds her transcribed
+    // bubble once the model hears the audio and tells us what she said.
+    await askClaude(stageNum, instructionsFor(stageNum), st.turns, {
+      audio: { data: base64Wav, format: 'wav' },
+    });
   }
 
   async function toggleMic(lang) {
     if (recording) {
       setRecording(false);
       try {
-        const text = await stopRecordingAndTranscribe(lang);
-        if (text.trim()) await send(text.trim());
+        if (lang === 'en') {
+          const base64Wav = await stopRecordingAsWav();
+          if (base64Wav) await sendAudio(base64Wav);
+        } else {
+          const text = await stopRecordingAndTranscribe(lang);
+          if (text.trim()) await send(text.trim());
+        }
       } catch (e) {
-        setMessages((m) => [...m, { role: 'system', text: '음성을 알아듣지 못했어요. 직접 입력해주세요.' }]);
+        console.error('mic flow failed', e);
+        setMessages((m) => [...m, { role: 'system', text: '음성을 처리하지 못했어요. 직접 입력해주세요.' }]);
       }
     } else {
       try {
