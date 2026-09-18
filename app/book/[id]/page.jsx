@@ -15,6 +15,12 @@ import {
 
 const emptyStage = () => ({ turns: [], log: [], startedAt: 0, endedAt: 0 });
 
+function spreadPhotoUrl(bookId, spreadNumber) {
+  if (!supabaseReady || !bookId || !spreadNumber) return null;
+  const { data } = supabase.storage.from('book-photos').getPublicUrl(`${bookId}/${spreadNumber}.jpg`);
+  return data?.publicUrl || null;
+}
+
 export default function Session() {
   const { id } = useParams();
   const router = useRouter();
@@ -47,6 +53,20 @@ export default function Session() {
 
   const [spreadIndex, setSpreadIndex] = useState(0);
   const [reading, setReading] = useState(false);
+  const [autoPlay, setAutoPlay] = useState(false);
+
+  useEffect(() => {
+    if (localStorage.getItem('nayul_autoplay') === '1') setAutoPlay(true);
+  }, []);
+
+  function toggleAutoPlay() {
+    setAutoPlay((v) => {
+      const next = !v;
+      localStorage.setItem('nayul_autoplay', next ? '1' : '0');
+      if (!next) stopSpeaking();
+      return next;
+    });
+  }
 
   const [stageNum, setStageNum] = useState(2);
   const [messages, setMessages] = useState([]);
@@ -94,11 +114,9 @@ export default function Session() {
     const s = book.spreads[spreadIndex];
     if (!s) return;
     setReading(true);
-    await speakLines(
-      [{ text: `Let's look at page ${s.number}.`, tone: 'calm' }, ...spreadLines(s)],
-      { slow, muted, cacheable: true, voice }
-    );
+    await speakLines(spreadLines(s), { slow, muted, cacheable: true, voice });
     setReading(false);
+    if (autoPlay) await new Promise((r) => setTimeout(r, 900)); // a beat to look at the page before it turns
     setSpreadIndex((i) => i + 1);
   }
 
@@ -109,6 +127,16 @@ export default function Session() {
     await speakLines(spreadLines(s), { slow, muted, cacheable: true, voice });
     setReading(false);
   }
+
+  // Auto-play: once a spread finishes, this re-fires and reads the next
+  // one on its own — no page-turn tap needed. Turning the toggle off (or
+  // running out of spreads) naturally stops the chain.
+  useEffect(() => {
+    if (screen !== 'stage1' || !autoPlay || reading) return;
+    if (!book || spreadIndex >= book.spreads.length) return;
+    readCurrent();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoPlay, reading, spreadIndex, screen, book]);
 
   /* ---------- stage 2 / 3 ---------- */
   const askClaude = useCallback(async (n, instructions, turns, childText) => {
@@ -334,6 +362,17 @@ export default function Session() {
         <div className="stage-card">
           {shown ? (
             <>
+              {(() => {
+                const photoUrl = spreadPhotoUrl(book.id, shown.number);
+                return photoUrl ? (
+                  <img
+                    src={photoUrl}
+                    alt=""
+                    className="stage-photo"
+                    onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                  />
+                ) : null;
+              })()}
               <div className="stage-num">펼침면 {shown.number}</div>
               <div className="stage-text">{shown.englishText || '(텍스트 없음)'}</div>
               {shown.sceneDescription && <div className="spread-scene">{shown.sceneDescription}</div>}
@@ -347,9 +386,18 @@ export default function Session() {
           <button className="btn-ghost" onClick={replayLast} disabled={reading || spreadIndex === 0}>🔊 다시 듣기</button>
           <button className="btn-ghost" onClick={() => setSlow((s) => !s)}>{slow ? '🐢 천천히 (켜짐)' : '🐢 천천히 읽기'}</button>
         </div>
+        <div className="row" style={{ marginTop: 8 }}>
+          <button className="btn-ghost" onClick={toggleAutoPlay}>
+            {autoPlay ? '⏸ 자동 재생 (켜짐)' : '▶️ 자동으로 끝까지 읽기'}
+          </button>
+        </div>
 
         {done ? (
           <button className="btn" style={{ marginTop: 14 }} onClick={() => startStage(2)}>책 다 읽었어요! 이야기 시작하기 →</button>
+        ) : autoPlay ? (
+          <div className="hint" style={{ textAlign: 'center', marginTop: 14 }}>
+            {reading ? '🔊 자동으로 읽는 중...' : '다음 페이지로 넘어가는 중...'}
+          </div>
         ) : (
           <button className="btn" style={{ marginTop: 14 }} onClick={readCurrent} disabled={reading}>
             {reading ? '읽는 중...' : spreadIndex === 0 ? '펼침면 보기 ▶' : `다음 펼침면 ▶ (${current.number})`}
