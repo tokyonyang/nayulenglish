@@ -78,7 +78,7 @@ export default function Session() {
     setReading(true);
     await speakLines(
       [{ text: `Let's look at page ${s.number}.`, tone: 'calm' }, ...spreadLines(s)],
-      { slow, muted }
+      { slow, muted, cacheable: true }
     );
     setReading(false);
     setSpreadIndex((i) => i + 1);
@@ -88,7 +88,7 @@ export default function Session() {
     const s = book.spreads[spreadIndex - 1];
     if (!s) return;
     setReading(true);
-    await speakLines(spreadLines(s), { slow, muted });
+    await speakLines(spreadLines(s), { slow, muted, cacheable: true });
     setReading(false);
   }
 
