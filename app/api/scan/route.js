@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { chatJSON } from '@/lib/openai';
+import { chatJSON, withRetries } from '@/lib/openai';
 import { spreadExtractionPrompt } from '@/lib/prompts';
 
 export const runtime = 'nodejs';
@@ -21,7 +21,7 @@ export async function POST(req) {
       const b64 = Buffer.from(await file.arrayBuffer()).toString('base64');
       const type = file.type && file.type.startsWith('image/') ? file.type : 'image/jpeg';
       try {
-        const data = await chatJSON({
+        const data = await withRetries(() => chatJSON({
           messages: [
             {
               role: 'user',
@@ -33,7 +33,7 @@ export async function POST(req) {
           ],
           maxTokens: 700,
           temperature: 0.2,
-        });
+        }));
         spreads.push({
           number: num,
           englishText: String(data?.englishText || ''),
