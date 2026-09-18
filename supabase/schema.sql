@@ -75,3 +75,20 @@ drop policy if exists "tts-cache public write" on storage.objects;
 create policy "tts-cache public write"
   on storage.objects for insert
   with check (bucket_id = 'tts-cache');
+
+-- ── 책 펼침면 사진 ──────────────────────────────
+-- Stage 1에서 텍스트와 함께 실제 사진을 보여주기 위해 저장합니다.
+-- 경로 규칙: {book id}/{spread number}.jpg
+insert into storage.buckets (id, name, public)
+values ('book-photos', 'book-photos', true)
+on conflict (id) do nothing;
+
+drop policy if exists "book-photos public read" on storage.objects;
+create policy "book-photos public read"
+  on storage.objects for select
+  using (bucket_id = 'book-photos');
+
+drop policy if exists "book-photos public write" on storage.objects;
+create policy "book-photos public write"
+  on storage.objects for insert
+  with check (bucket_id = 'book-photos');
