@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { supabase, supabaseReady } from '@/lib/supabase';
 import { DAY_THEMES, stage2Instructions, stage3Instructions } from '@/lib/prompts';
 import {
-  speakLines, stopSpeaking, spreadLines, chatLines,
+  speakLines, stopSpeaking, spreadLines, chatLines, TTS_VOICES,
   recordingSupported, startRecording, stopRecordingAndTranscribe,
 } from '@/lib/audio';
 import {
@@ -26,6 +26,24 @@ export default function Session() {
 
   const [muted, setMuted] = useState(false);
   const [slow, setSlow] = useState(false);
+  const [voice, setVoice] = useState('coral');
+
+  useEffect(() => {
+    const saved = localStorage.getItem('nayul_voice');
+    if (saved && TTS_VOICES.includes(saved)) setVoice(saved);
+  }, []);
+
+  function changeVoice(v) {
+    setVoice(v);
+    localStorage.setItem('nayul_voice', v);
+  }
+
+  function previewVoice(v) {
+    stopSpeaking();
+    speakLines([{ text: "Hi there! Let's read a book together.", tone: 'calm' }], {
+      slow: false, muted: false, cacheable: true, voice: v,
+    });
+  }
 
   const [spreadIndex, setSpreadIndex] = useState(0);
   const [reading, setReading] = useState(false);
@@ -78,7 +96,7 @@ export default function Session() {
     setReading(true);
     await speakLines(
       [{ text: `Let's look at page ${s.number}.`, tone: 'calm' }, ...spreadLines(s)],
-      { slow, muted, cacheable: true }
+      { slow, muted, cacheable: true, voice }
     );
     setReading(false);
     setSpreadIndex((i) => i + 1);
@@ -88,7 +106,7 @@ export default function Session() {
     const s = book.spreads[spreadIndex - 1];
     if (!s) return;
     setReading(true);
-    await speakLines(spreadLines(s), { slow, muted, cacheable: true });
+    await speakLines(spreadLines(s), { slow, muted, cacheable: true, voice });
     setReading(false);
   }
 
@@ -122,13 +140,13 @@ export default function Session() {
 
       setMessages((m) => [...m, { role: 'assistant', text: speak }]);
       if (d.wantsWrapUp) setWrapUp(true);
-      speakLines(chatLines(speak), { slow, muted });
+      speakLines(chatLines(speak), { slow, muted, voice });
     } catch (e) {
       setMessages((m) => [...m, { role: 'system', text: `문제가 생겼어요: ${String(e.message || e).slice(0, 120)}` }]);
     } finally {
       setThinking(false);
     }
-  }, [slow, muted]);
+  }, [slow, muted, voice]);
 
   function instructionsFor(n) {
     if (n === 2) return stage2Instructions(book, day);
@@ -293,6 +311,20 @@ export default function Session() {
           </div>
         </div>
 
+        <div className="row" style={{ marginTop: 10, alignItems: 'center', gap: 8 }}>
+          <select
+            className="field en"
+            style={{ flex: 1, padding: '9px 10px', fontSize: 13.5 }}
+            value={voice}
+            onChange={(e) => changeVoice(e.target.value)}
+          >
+            {TTS_VOICES.map((v) => <option key={v} value={v}>{v}</option>)}
+          </select>
+          <button className="btn-icon" style={{ width: 'auto', padding: '0 12px', fontSize: 12.5 }} onClick={() => previewVoice(voice)}>
+            🔊 미리듣기
+          </button>
+        </div>
+
         <div className="dots">
           {book.spreads.map((s, i) => (
             <span key={s.number} className={`dot ${i < spreadIndex ? 'done' : ''} ${i === spreadIndex ? 'now' : ''}`} />
@@ -376,7 +408,7 @@ export default function Session() {
         </div>
 
         <div className="row" style={{ marginTop: 10 }}>
-          <button className="btn-ghost" onClick={() => { const last = [...messages].reverse().find((m) => m.role === 'assistant'); if (last) speakLines(chatLines(last.text), { slow, muted }); }}>
+          <button className="btn-ghost" onClick={() => { const last = [...messages].reverse().find((m) => m.role === 'assistant'); if (last) speakLines(chatLines(last.text), { slow, muted, voice }); }}>
             🔊 다시 듣기
           </button>
           {stageNum === 2 ? (
