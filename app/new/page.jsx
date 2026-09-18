@@ -4,22 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase, supabaseReady } from '@/lib/supabase';
-
-function blankSpread(number, englishText = '') {
-  return {
-    number,
-    englishText,
-    sceneDescription: '',
-    textUncertain: false,
-    error: null,
-    tone: 'calm',
-    voiceDirection: '',
-    asides: [],
-    sfx: [],
-    keyVocab: [],
-    speakingValue: 3,
-  };
-}
+import { blankSpread, enrichSpreads, mergeEnrichment } from '@/lib/bookEditing';
 
 /** Picture books often print a small page number on each page. If most
  *  scanned spreads have one and they're all distinct, use it to reorder —
@@ -106,32 +91,8 @@ export default function NewBook() {
     });
   }
 
-  async function enrich(spreads) {
-    const res = await fetch('/api/enrich', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ spreads }),
-    });
-    if (!res.ok) throw new Error(await res.text());
-    return res.json();
-  }
-
-  function merge(spreads, enr) {
-    const list = Array.isArray(enr?.spreads) ? enr.spreads : [];
-    return spreads.map((s) => {
-      const e = list.find((x) => Number(x.number) === s.number) || {};
-      return {
-        ...s,
-        sceneDescription: s.sceneDescription || String(e.scene || ''),
-        tone: e.tone || s.tone || 'calm',
-        voiceDirection: String(e.voiceDirection || '') || s.voiceDirection || '',
-        asides: Array.isArray(e.asides) ? e.asides.slice(0, 2) : s.asides,
-        sfx: Array.isArray(e.sfx) ? e.sfx.slice(0, 1) : s.sfx,
-        keyVocab: Array.isArray(e.keyVocab) ? e.keyVocab.slice(0, 3) : s.keyVocab,
-        speakingValue: Number(e.speakingValue) || s.speakingValue || 3,
-      };
-    });
-  }
+  const enrich = enrichSpreads;
+  const merge = mergeEnrichment;
 
   async function scanPhotos() {
     setError('');
