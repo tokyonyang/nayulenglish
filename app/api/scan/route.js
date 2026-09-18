@@ -9,6 +9,7 @@ export async function POST(req) {
   try {
     const form = await req.formData();
     const files = form.getAll('photos').filter((f) => typeof f === 'object' && f.size > 0);
+    const start = Math.max(1, parseInt(form.get('start'), 10) || 1);
     if (!files.length) {
       return NextResponse.json({ error: '사진이 없습니다.' }, { status: 400 });
     }
@@ -16,7 +17,7 @@ export async function POST(req) {
     const spreads = [];
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      const num = i + 1;
+      const num = start + i;
       const b64 = Buffer.from(await file.arrayBuffer()).toString('base64');
       const type = file.type && file.type.startsWith('image/') ? file.type : 'image/jpeg';
       try {
@@ -38,6 +39,7 @@ export async function POST(req) {
           englishText: String(data?.englishText || ''),
           sceneDescription: String(data?.sceneDescription || ''),
           textUncertain: Boolean(data?.textUncertain),
+          detectedPage: Number.isFinite(Number(data?.printedPageNumber)) ? Number(data.printedPageNumber) : null,
           error: null,
         });
       } catch (e) {
@@ -47,6 +49,7 @@ export async function POST(req) {
           englishText: '',
           sceneDescription: '',
           textUncertain: true,
+          detectedPage: null,
           error: String(e.message || e).slice(0, 200),
         });
       }
