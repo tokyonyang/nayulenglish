@@ -262,14 +262,23 @@ export default function NewBook() {
           onChange={(e) => { setFiles((p) => [...p, ...Array.from(e.target.files || [])]); e.target.value = ''; }}
         />
       </label>
+      <p className="hint" style={{ margin: '6px 0 0', fontSize: 12.5 }}>
+        선택된 사진: {files.length}장
+      </p>
 
       {files.length > 0 && (
         <>
           <div className="thumbs">
             {files.map((f, i) => (
-              <div className="thumb" key={`${f.name}-${i}`}>
-                <img src={URL.createObjectURL(f)} alt="" />
+              <div className="thumb" key={`${f.name}-${f.size}-${i}`}>
+                <img
+                  src={URL.createObjectURL(f)}
+                  alt=""
+                  onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextElementSibling?.classList.add('show'); }}
+                />
+                <div className="thumb-fallback">🖼<br />{f.name.slice(0, 14)}</div>
                 <span className="num">{i + 1}</span>
+                <span className="filesize">{(f.size / 1024 / 1024).toFixed(1)}MB</span>
                 <div className="acts">
                   <button onClick={() => moveFile(i, -1)}>▲</button>
                   <button onClick={() => moveFile(i, 1)}>▼</button>
