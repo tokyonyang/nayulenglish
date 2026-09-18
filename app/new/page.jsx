@@ -20,6 +20,31 @@ function blankSpread(number, englishText = '') {
   };
 }
 
+/** Picture books often print a small page number on each page. If most
+ *  scanned spreads have one and they're all distinct, use it to reorder —
+ *  so parents don't have to photograph pages in exact reading order.
+ *  Spreads with no detected number (or if too few books show numbers)
+ *  fall back to upload order, appended at the end for manual placement. */
+function autoOrderSpreads(scanned) {
+  const total = scanned.length;
+  const withPage = scanned.filter((s) => Number.isFinite(s.detectedPage));
+  const uniquePages = new Set(withPage.map((s) => s.detectedPage)).size === withPage.length;
+
+  if (total >= 2 && withPage.length / total >= 0.7 && uniquePages) {
+    const numbered = [...withPage].sort((a, b) => a.detectedPage - b.detectedPage);
+    const unnumbered = scanned
+      .filter((s) => !Number.isFinite(s.detectedPage))
+      .sort((a, b) => a.number - b.number);
+    const ordered = [...numbered, ...unnumbered].map((s, i) => ({ ...s, number: i + 1 }));
+    return { spreads: ordered, autoSorted: true, unplacedCount: unnumbered.length };
+  }
+  return {
+    spreads: [...scanned].sort((a, b) => a.number - b.number),
+    autoSorted: false,
+    unplacedCount: 0,
+  };
+}
+
 async function convertOnce(file, maxSide, quality) {
   try {
     const bmp = await createImageBitmap(file);
@@ -67,6 +92,7 @@ export default function NewBook() {
   const [bulk, setBulk] = useState('');
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
+  const [note, setNote] = useState('');
   const [book, setBook] = useState(null);
 
   function moveFile(i, dir) {
@@ -107,6 +133,7 @@ export default function NewBook() {
 
   async function scanPhotos() {
     setError('');
+    setNote('');
     try {
       const converted = [];
       for (let i = 0; i < files.length; i++) {
@@ -154,12 +181,20 @@ export default function NewBook() {
         done += batch.length;
       }
 
-      const base = spreads.map((s) => ({ ...blankSpread(s.number, s.englishText), ...s }));
+      const { spreads: ordered, autoSorted, unplacedCount } = autoOrderSpreads(spreads);
+      const base = ordered.map((s) => ({ ...blankSpread(s.number, s.englishText), ...s }));
       setBusy('책 전체 이야기를 정리하고 있어요...');
       let enr = null;
       if (base.some((s) => s.englishText.trim())) {
         try { enr = await enrich(base); } catch (e) { console.error(e); }
       }
+      setNote(
+        autoSorted
+          ? unplacedCount > 0
+            ? `책에 인쇄된 페이지 번호를 읽어서 순서를 자동 정렬했어요. 번호를 못 찾은 ${unplacedCount}장은 맨 뒤에 넣어뒀으니 맞는 자리로 옮겨주세요.`
+            : '책에 인쇄된 페이지 번호를 읽어서 순서를 자동 정렬했어요. 확인해보시고 다르면 ▲▼로 조정해주세요.'
+          : '페이지 번호를 충분히 찾지 못해 업로드하신 순서를 그대로 사용했어요. 순서가 다르면 ▲▼로 조정해주세요.'
+      );
       setBook({
         title: enr?.title || 'My Picture Book',
         themes: enr?.themes || '',
@@ -175,6 +210,7 @@ export default function NewBook() {
 
   async function buildFromText() {
     setError('');
+    setNote('');
     const raw = bulk.trim();
     if (!raw) { setError('책 문장을 먼저 입력해주세요.'); return; }
     let chunks = raw.split(/\n\s*\n+/).map((s) => s.trim()).filter(Boolean);
@@ -251,14 +287,13 @@ export default function NewBook() {
     return (
       <>
         <div className="topbar">
-          <button className="btn-icon" onClick={() => setBook(null)}>←</button>
+          <button className="btn-icon" onClick={() => { setBook(null); setNote(''); }}>←</button>
           <span className="title">책 확인하기</span>
           <span style={{ width: 38 }} />
         </div>
 
         {error && <div className="banner">{error}</div>}
-
-        <label className="label">책 제목</label>
+        {note && <div className="banner info">{note}</div>}
         <input
           className="field en"
           value={book.title}
