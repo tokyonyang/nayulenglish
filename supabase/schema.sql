@@ -58,3 +58,20 @@ create policy "books all access" on books for all using (true) with check (true)
 
 drop policy if exists "reports all access" on reports;
 create policy "reports all access" on reports for all using (true) with check (true);
+
+-- ── 책 읽어주기(Stage 1) 음성 캐시 ──────────────────────────────
+-- 같은 책은 7일 동안 매일 같은 문장을 읽어주므로, 문장+톤별로 한 번만
+-- 합성하고 mp3를 저장해뒀다가 재생만 하도록 합니다. (OpenAI TTS 비용 절감)
+insert into storage.buckets (id, name, public)
+values ('tts-cache', 'tts-cache', true)
+on conflict (id) do nothing;
+
+drop policy if exists "tts-cache public read" on storage.objects;
+create policy "tts-cache public read"
+  on storage.objects for select
+  using (bucket_id = 'tts-cache');
+
+drop policy if exists "tts-cache public write" on storage.objects;
+create policy "tts-cache public write"
+  on storage.objects for insert
+  with check (bucket_id = 'tts-cache');
