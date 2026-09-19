@@ -116,6 +116,7 @@ export default function Session() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [thinking, setThinking] = useState(false);
+  const [speaking, setSpeaking] = useState(false);
   const [recording, setRecording] = useState(false);
   const [wrapUp, setWrapUp] = useState(false);
   const [elapsed, setElapsed] = useState(0);
@@ -198,6 +199,7 @@ export default function Session() {
   /* ---------- stage 2 / 3 ---------- */
   const askClaude = useCallback(async (n, instructions, turns, opts = {}) => {
     setThinking(true);
+    let speak = null;
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
@@ -206,7 +208,7 @@ export default function Session() {
       });
       if (!res.ok) throw new Error(await res.text());
       const d = await res.json();
-      const speak = String(d.speak || '').trim() || '...';
+      speak = String(d.speak || '').trim() || '...';
       const st = stage.current[n];
 
       // Text turns are already pushed into `turns` by the caller before this
@@ -235,11 +237,23 @@ export default function Session() {
 
       setMessages((m) => [...m, { role: 'assistant', text: speak }]);
       if (d.wantsWrapUp) setWrapUp(true);
-      speakLines(chatLines(speak), { slow, muted, voice });
     } catch (e) {
       setMessages((m) => [...m, { role: 'system', text: `문제가 생겼어요: ${String(e.message || e).slice(0, 120)}` }]);
     } finally {
       setThinking(false);
+    }
+
+    // Keep the mic/input/send locked through actual playback, not just the
+    // network round trip — otherwise a fast next turn can start (and begin
+    // its own speakLines call) while this reply is still talking, and two
+    // <audio> elements end up playing over each other.
+    if (speak) {
+      setSpeaking(true);
+      try {
+        await speakLines(chatLines(speak), { slow, muted, voice });
+      } finally {
+        setSpeaking(false);
+      }
     }
   }, [slow, muted, voice]);
 
@@ -271,7 +285,7 @@ export default function Session() {
 
   async function send(text) {
     const t = (text ?? input).trim();
-    if (!t || thinking) return;
+    if (!t || thinking || speaking) return;
     const st = stage.current[stageNum];
     st.turns.push({ role: 'user', content: t });
     setMessages((m) => [...m, { role: 'child', text: t }]);
@@ -281,7 +295,7 @@ export default function Session() {
   }
 
   async function sendAudio(base64Wav) {
-    if (thinking) return;
+    if (thinking || speaking) return;
     stopSpeaking();
     const st = stage.current[stageNum];
     // turns does NOT yet include this turn — askClaude adds her transcribed
@@ -515,6 +529,7 @@ export default function Session() {
         <div className="transcript">
           {messages.map((m, i) => <div className={`bubble ${m.role}`} key={i}>{m.text}</div>)}
           {thinking && <div className="bubble system">🤔 생각하고 있어요...</div>}
+          {speaking && <div className="bubble system">🔊 말하는 중...</div>}
           <div ref={bottom} />
         </div>
 
@@ -523,10 +538,10 @@ export default function Session() {
         <div className="inputbar">
           {recordingSupported() && (
             <>
-              <button className={`mic ${recording ? 'rec' : ''}`} onClick={() => toggleMic('en')} disabled={thinking}>
+              <button className={`mic ${recording ? 'rec' : ''}`} onClick={() => toggleMic('en')} disabled={thinking || speaking}>
                 {recording ? '■' : '🎤EN'}
               </button>
-              <button className="mic" onClick={() => toggleMic('ko')} disabled={thinking || recording}>🎤KO</button>
+              <button className="mic" onClick={() => toggleMic('ko')} disabled={thinking || speaking || recording}>🎤KO</button>
             </>
           )}
           <input
@@ -534,21 +549,31 @@ export default function Session() {
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') send(); }}
             placeholder="나율이가 말한 내용을 입력해요"
-            disabled={thinking}
+            disabled={thinking || speaking}
           />
-          <button className="send" onClick={() => send()} disabled={thinking}>보내기</button>
+          <button className="send" onClick={() => send()} disabled={thinking || speaking}>보내기</button>
         </div>
 
         <div className="row" style={{ marginTop: 10 }}>
-          <button className="btn-ghost" onClick={() => { const last = [...messages].reverse().find((m) => m.role === 'assistant'); if (last) speakLines(chatLines(last.text), { slow, muted, voice }); }}>
+          <button
+            className="btn-ghost"
+            disabled={thinking || speaking}
+            onClick={() => {
+              const last = [...messages].reverse().find((m) => m.role === 'assistant');
+              if (!last) return;
+              stopSpeaking();
+              setSpeaking(true);
+              speakLines(chatLines(last.text), { slow, muted, voice }).finally(() => setSpeaking(false));
+            }}
+          >
             🔊 다시 듣기
           </button>
           {stageNum === 2 ? (
-            <button className="btn" onClick={() => { stage.current[2].endedAt = Date.now(); startStage(3); }}>
+            <button className="btn" disabled={thinking || speaking} onClick={() => { stage.current[2].endedAt = Date.now(); startStage(3); }}>
               다음: 오늘 이야기 →
             </button>
           ) : (
-            <button className="btn" onClick={finish}>세션 마무리 →</button>
+            <button className="btn" disabled={thinking || speaking} onClick={finish}>세션 마무리 →</button>
           )}
         </div>
       </>
