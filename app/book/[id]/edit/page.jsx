@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase, supabaseReady } from '@/lib/supabase';
 import { blankSpread, enrichSpreads, mergeEnrichment } from '@/lib/bookEditing';
+import { precacheSpreads } from '@/lib/audio';
 
 export default function EditBook() {
   const { id } = useParams();
@@ -63,8 +64,17 @@ export default function EditBook() {
         spreads: book.spreads,
       })
       .eq('id', id);
+    if (error) { setBusy(''); setError(error.message); return; }
+
+    // Only changed lines actually regenerate — anything already cached
+    // (unedited pages) is skipped, so this stays quick on small edits.
+    const voice = (typeof window !== 'undefined' && localStorage.getItem('nayul_voice')) || 'coral';
+    await precacheSpreads(book.spreads, {
+      voice,
+      onProgress: (done, total) => setBusy(`읽어주기 음성 준비 중... (${done}/${total})`),
+    });
+
     setBusy('');
-    if (error) { setError(error.message); return; }
     router.push(`/book/${id}`);
   }
 
