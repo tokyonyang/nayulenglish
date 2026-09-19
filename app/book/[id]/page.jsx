@@ -8,18 +8,13 @@ import { DAY_THEMES, stage2Instructions, stage3Instructions } from '@/lib/prompt
 import {
   speakLines, stopSpeaking, spreadLines, chatLines, TTS_VOICES, precacheSpreads, checkCacheStatus,
   recordingSupported, startRecording, stopRecordingAndTranscribe, stopRecordingAsWav,
+  spreadPhotoUrl, backupBookToDrive,
 } from '@/lib/audio';
 import {
   tally, bestLevelLabel, pairStats, transcriptSummary, truncateMiddle, todayStr,
 } from '@/lib/report';
 
 const emptyStage = () => ({ turns: [], log: [], startedAt: 0, endedAt: 0 });
-
-function spreadPhotoUrl(bookId, spreadNumber) {
-  if (!supabaseReady || !bookId || !spreadNumber) return null;
-  const { data } = supabase.storage.from('book-photos').getPublicUrl(`${bookId}/${spreadNumber}.jpg`);
-  return data?.publicUrl || null;
-}
 
 // Free Dictionary API (dictionaryapi.dev), proxied through /api/vocab — no
 // OpenAI cost. Looks up a short definition + native pronunciation clip for
@@ -105,6 +100,26 @@ export default function Session() {
       characterVoices: book.character_voices || {},
     });
     setCacheStatus(`${cached} / ${total}줄 캐시됨`);
+  }
+
+  const [backingUp, setBackingUp] = useState('');
+  async function backupToDrive() {
+    if (!book || backingUp) return;
+    setBackingUp('Google Drive 백업 준비 중...');
+    try {
+      const { uploaded, skipped, failed, total } = await backupBookToDrive(book, {
+        voice,
+        characterVoices: book.character_voices || {},
+        onProgress: (done, totalCount, label) => setBackingUp(`백업 중... (${done}/${totalCount}) ${label || ''}`),
+      });
+      setBackingUp(
+        total === 0
+          ? '백업할 파일이 없어요 (사진·음성이 아직 준비되지 않았어요).'
+          : `완료 — 새로 올림 ${uploaded}개, 이미 있어서 건너뜀 ${skipped}개${failed ? `, 실패 ${failed}개` : ''}`
+      );
+    } catch (e) {
+      setBackingUp(`백업 실패: ${String(e.message || e).slice(0, 150)}`);
+    }
   }
 
   const [spreadIndex, setSpreadIndex] = useState(0);
@@ -483,6 +498,14 @@ export default function Session() {
         )}
         {cacheStatus && !precaching && (
           <p className="hint" style={{ margin: '4px 0 0', textAlign: 'center' }}>{cacheStatus}</p>
+        )}
+
+        {backingUp ? (
+          <div className="banner info">{backingUp}</div>
+        ) : (
+          <button className="btn-ghost" onClick={backupToDrive}>
+            ☁️ Google Drive에 백업
+          </button>
         )}
 
         <div className="dots">
