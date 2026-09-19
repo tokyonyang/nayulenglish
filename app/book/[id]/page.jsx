@@ -21,6 +21,36 @@ function spreadPhotoUrl(bookId, spreadNumber) {
   return data?.publicUrl || null;
 }
 
+// Free Dictionary API (dictionaryapi.dev), proxied through /api/vocab — no
+// OpenAI cost. Looks up a short definition + native pronunciation clip for
+// one of the book's key vocabulary words.
+function VocabWord({ word }) {
+  const [info, setInfo] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/vocab?word=${encodeURIComponent(word)}`)
+      .then((res) => res.json())
+      .then((d) => { if (!cancelled) setInfo(d); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [word]);
+
+  return (
+    <div className="vocab-word">
+      <div className="vocab-word-head">
+        <span className="en vocab-term">{word}</span>
+        {info?.phonetic && <span className="vocab-phonetic">{info.phonetic}</span>}
+        {info?.audio && (
+          <button className="btn-icon vocab-play" onClick={() => new Audio(info.audio).play().catch(() => {})}>
+            🔊
+          </button>
+        )}
+      </div>
+      {info?.definition && <div className="vocab-def">{info.definition}</div>}
+    </div>
+  );
+}
+
 export default function Session() {
   const { id } = useParams();
   const router = useRouter();
@@ -564,6 +594,15 @@ export default function Session() {
         ))}
       </div>
       {r.comment && <div className="report-comment">{r.comment}</div>}
+
+      {Array.isArray(book?.overall_vocab) && book.overall_vocab.length > 0 && (
+        <>
+          <h2>이 책의 핵심 표현</h2>
+          <div className="vocab-list">
+            {book.overall_vocab.map((w) => <VocabWord key={w} word={w} />)}
+          </div>
+        </>
+      )}
       <Link href="/history"><button className="btn-ghost">📋 지난 리포트 · CSV 내려받기</button></Link>
       <button className="btn" style={{ marginTop: 12 }} onClick={() => router.push('/')}>홈으로</button>
     </>
