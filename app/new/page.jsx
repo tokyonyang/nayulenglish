@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase, supabaseReady } from '@/lib/supabase';
 import { blankSpread, enrichSpreads, mergeEnrichment } from '@/lib/bookEditing';
+import { precacheSpreads } from '@/lib/audio';
 
 /** Picture books often print a small page number on each page. If most
  *  scanned spreads have one and they're all distinct, use it to reorder —
@@ -288,6 +289,14 @@ export default function NewBook() {
         console.error('photo upload failed', s.number, e);
       }
     }
+
+    // Pre-build every read-aloud clip now, so the first actual reading
+    // session plays instantly instead of generating page-by-page.
+    const voice = (typeof window !== 'undefined' && localStorage.getItem('nayul_voice')) || 'coral';
+    await precacheSpreads(cleanSpreads, {
+      voice,
+      onProgress: (done, total) => setBusy(`읽어주기 음성 미리 준비 중... (${done}/${total})`),
+    });
 
     setBusy('');
     router.push(`/book/${data.id}`);
