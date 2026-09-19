@@ -16,6 +16,26 @@ import {
 
 const emptyStage = () => ({ turns: [], log: [], startedAt: 0, endedAt: 0 });
 
+// From every previous day's saved transcript for this book, pull out the
+// assistant's question-bearing lines so today's conversation can be told
+// not to repeat them. Deduped, capped so the prompt stays small.
+function extractPriorQuestions(reports) {
+  const seen = new Set();
+  const qs = [];
+  for (const r of reports || []) {
+    for (const turn of r.transcript || []) {
+      if (turn.role !== 'assistant') continue;
+      const text = String(turn.content || '').trim();
+      if (!text || !text.includes('?')) continue;
+      const key = text.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      qs.push(text);
+    }
+  }
+  return qs.slice(-30);
+}
+
 // Free Dictionary API (dictionaryapi.dev), proxied through /api/vocab — no
 // OpenAI cost. Looks up a short definition + native pronunciation clip for
 // one of the book's key vocabulary words.
@@ -154,6 +174,7 @@ export default function Session() {
 
   const stage = useRef({ 2: emptyStage(), 3: emptyStage() });
   const bottom = useRef(null);
+  const priorQuestionsRef = useRef([]);
 
   /* ---------- load ---------- */
   useEffect(() => {
@@ -161,10 +182,11 @@ export default function Session() {
       if (!supabaseReady) { setError('Supabase 환경변수가 설정되지 않았습니다.'); setScreen('error'); return; }
       const { data: b, error: e1 } = await supabase.from('books').select('*').eq('id', id).single();
       if (e1 || !b) { setError(e1?.message || '책을 찾지 못했어요.'); setScreen('error'); return; }
-      const { data: reports } = await supabase.from('reports').select('date').eq('book_id', id);
+      const { data: reports } = await supabase.from('reports').select('date, transcript').eq('book_id', id);
       const dates = new Set((reports || []).map((r) => r.date));
       const priorDays = dates.has(todayStr()) ? dates.size - 1 : dates.size;
       setDay(Math.min(Math.max(priorDays + 1, 1), 7));
+      priorQuestionsRef.current = extractPriorQuestions(reports);
       setBook(b);
       setScreen('stage1');
     })();
@@ -289,7 +311,7 @@ export default function Session() {
   }, [slow, muted, voice]);
 
   function instructionsFor(n) {
-    if (n === 2) return stage2Instructions(book, day);
+    if (n === 2) return stage2Instructions(book, day, priorQuestionsRef.current);
     const log2 = stage.current[2].log;
     let bridge = null;
     for (let i = log2.length - 1; i >= 0; i--) {
@@ -298,7 +320,7 @@ export default function Session() {
         break;
       }
     }
-    return stage3Instructions(book, day, bridge);
+    return stage3Instructions(book, day, bridge, priorQuestionsRef.current);
   }
 
   async function startStage(n) {
