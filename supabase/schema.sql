@@ -92,3 +92,8 @@ drop policy if exists "book-photos public write" on storage.objects;
 create policy "book-photos public write"
   on storage.objects for insert
   with check (bucket_id = 'book-photos');
+
+-- ── 등장인물별 고정 목소리 ──────────────────────────────
+-- {"Gerald": "onyx", "Piggie": "shimmer"} 같은 형태로, 한 번 배정된
+-- 등장인물의 목소리는 이후 다시 정리해도 유지됩니다.
+alter table books add column if not exists character_voices jsonb not null default '{}'::jsonb;
