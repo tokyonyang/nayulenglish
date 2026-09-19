@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase, supabaseReady } from '@/lib/supabase';
-import { blankSpread, enrichSpreads, mergeEnrichment } from '@/lib/bookEditing';
+import { blankSpread, enrichSpreads, mergeEnrichment, assignCharacterVoices } from '@/lib/bookEditing';
 import { precacheSpreads } from '@/lib/audio';
 
 export default function EditBook() {
@@ -25,6 +25,7 @@ export default function EditBook() {
         title: data.title,
         themes: data.themes || '',
         overallVocab: data.overall_vocab || [],
+        characterVoices: data.character_voices || {},
         spreads: (data.spreads || []).map((s, i) => ({ ...blankSpread(s.number ?? i + 1), ...s })),
       });
       setBusy('');
@@ -42,6 +43,7 @@ export default function EditBook() {
         title: enr?.title || b.title,
         themes: enr?.themes || b.themes,
         overallVocab: Array.isArray(enr?.overallVocab) ? enr.overallVocab : b.overallVocab,
+        characterVoices: assignCharacterVoices(b.characterVoices, enr?.characters),
         spreads: mergeEnrichment(b.spreads, enr),
       }));
       setNote('다시 정리했어요. 목소리 연출도 새로 반영됐어요 — 아래 저장을 눌러주세요.');
@@ -61,6 +63,7 @@ export default function EditBook() {
         title: book.title.trim() || 'Untitled Story',
         themes: book.themes,
         overall_vocab: book.overallVocab,
+        character_voices: book.characterVoices || {},
         spreads: book.spreads,
       })
       .eq('id', id);
@@ -71,6 +74,7 @@ export default function EditBook() {
     const voice = (typeof window !== 'undefined' && localStorage.getItem('nayul_voice')) || 'coral';
     await precacheSpreads(book.spreads, {
       voice,
+      characterVoices: book.characterVoices || {},
       onProgress: (done, total) => setBusy(`읽어주기 음성 준비 중... (${done}/${total})`),
     });
 
@@ -123,6 +127,11 @@ export default function EditBook() {
         onChange={(e) => setBook({ ...book, title: e.target.value })}
       />
       {book.themes && <p className="hint">{book.themes}</p>}
+      {book.characterVoices && Object.keys(book.characterVoices).length > 0 && (
+        <p className="hint">
+          🎭 등장인물 목소리: {Object.entries(book.characterVoices).map(([name, v]) => `${name}(${v})`).join(', ')}
+        </p>
+      )}
 
       {book.spreads.map((s, i) => (
         <div className={`spread-row ${s.error || s.textUncertain ? 'warn' : ''}`} key={s.number}>
