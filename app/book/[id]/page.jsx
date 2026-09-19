@@ -8,7 +8,7 @@ import { DAY_THEMES, stage2Instructions, stage3Instructions } from '@/lib/prompt
 import {
   speakLines, stopSpeaking, spreadLines, chatLines, TTS_VOICES, precacheSpreads, checkCacheStatus,
   recordingSupported, startRecording, stopRecordingAndTranscribe, stopRecordingAsWav,
-  spreadPhotoUrl, backupBookToDrive,
+  spreadPhotoUrl, spreadPhotoFallbackUrl, backupBookToDrive,
 } from '@/lib/audio';
 import {
   tally, bestLevelLabel, pairStats, transcriptSummary, truncateMiddle, todayStr,
@@ -554,7 +554,19 @@ export default function Session() {
                 src={photoUrl}
                 alt=""
                 className="stage-photo"
-                onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                onError={(e) => {
+                  if (e.currentTarget.dataset.fallbackTried) {
+                    e.currentTarget.style.display = 'none';
+                    return;
+                  }
+                  const fallback = spreadPhotoFallbackUrl(book.id, cur.number);
+                  if (fallback) {
+                    e.currentTarget.dataset.fallbackTried = '1';
+                    e.currentTarget.src = fallback;
+                  } else {
+                    e.currentTarget.style.display = 'none';
+                  }
+                }}
               />
             ) : null;
           })()}
