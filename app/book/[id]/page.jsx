@@ -124,6 +124,28 @@ export default function Session() {
     setCacheStatus(`${cached} / ${total}줄 캐시됨`);
   }
 
+  // Automatic, non-blocking: as soon as a book is open, quietly fill in
+  // whatever read-aloud audio is missing — already-cached lines are just
+  // existence-checked (fast) and skipped, so a book that's fully ready
+  // shows nothing here. Re-runs if the voice changes, so switching voices
+  // also gets prepared ahead of time. Never blocks reading — readSpreadAt
+  // does its own check-then-generate per line regardless.
+  const [autoPrep, setAutoPrep] = useState('');
+  const autoPrepBusy = useRef(false);
+  useEffect(() => {
+    if (!book || autoPrepBusy.current) return;
+    autoPrepBusy.current = true;
+    precacheSpreads(book.spreads, {
+      bookId: book.id,
+      voice,
+      characterVoices: book.character_voices || {},
+      onProgress: (done, total) => setAutoPrep(done < total ? `🎧 음성 준비 중... (${done}/${total})` : ''),
+    }).finally(() => {
+      autoPrepBusy.current = false;
+      setAutoPrep('');
+    });
+  }, [book, voice]);
+
   const [backingUp, setBackingUp] = useState('');
   async function backupToDrive() {
     if (!book || backingUp) return;
@@ -510,6 +532,8 @@ export default function Session() {
           </p>
         )}
 
+        {autoPrep && <p className="hint" style={{ margin: '6px 0 0', textAlign: 'center' }}>{autoPrep}</p>}
+
         {precaching ? (
           <div className="banner info">{precaching}</div>
         ) : (
@@ -576,22 +600,22 @@ export default function Session() {
         </div>
 
         <div className="row">
-          <button className="btn-ghost" onClick={() => goTo(spreadIndex - 1)} disabled={isFirst || !!precaching}>◀ 이전 페이지</button>
-          <button className="btn-ghost" onClick={() => goTo(spreadIndex + 1)} disabled={isLast || !!precaching}>다음 페이지 ▶</button>
+          <button className="btn-ghost" onClick={() => goTo(spreadIndex - 1)} disabled={isFirst}>◀ 이전 페이지</button>
+          <button className="btn-ghost" onClick={() => goTo(spreadIndex + 1)} disabled={isLast}>다음 페이지 ▶</button>
         </div>
         <div className="row" style={{ marginTop: 8 }}>
-          <button className="btn-ghost" onClick={() => readSpreadAt(spreadIndex)} disabled={reading || !!precaching}>
+          <button className="btn-ghost" onClick={() => readSpreadAt(spreadIndex)} disabled={reading}>
             {reading ? '🔊 읽는 중...' : '🔊 이 페이지 읽어주기'}
           </button>
           <button className="btn-ghost" onClick={() => setSlow((s) => !s)}>{slow ? '🐢 천천히 (켜짐)' : '🐢 천천히 읽기'}</button>
         </div>
         <div className="row" style={{ marginTop: 8 }}>
-          <button className="btn-ghost" onClick={toggleAutoPlay} disabled={!!precaching}>
+          <button className="btn-ghost" onClick={toggleAutoPlay}>
             {autoPlay ? '⏸ 자동 재생 (켜짐)' : '▶️ 자동으로 끝까지 읽기'}
           </button>
         </div>
 
-        <button className="btn" style={{ marginTop: 14 }} onClick={() => startStage(2)} disabled={!!precaching}>이야기 시작하기 →</button>
+        <button className="btn" style={{ marginTop: 14 }} onClick={() => startStage(2)}>이야기 시작하기 →</button>
       </>
     );
   }
