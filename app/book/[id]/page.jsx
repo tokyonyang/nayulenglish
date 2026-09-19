@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { supabase, supabaseReady } from '@/lib/supabase';
 import { DAY_THEMES, stage2Instructions, stage3Instructions } from '@/lib/prompts';
 import {
-  speakLines, stopSpeaking, spreadLines, chatLines, TTS_VOICES, precacheSpreads,
+  speakLines, stopSpeaking, spreadLines, chatLines, TTS_VOICES, precacheSpreads, checkCacheStatus,
   recordingSupported, startRecording, stopRecordingAndTranscribe, stopRecordingAsWav,
 } from '@/lib/audio';
 import {
@@ -94,6 +94,17 @@ export default function Session() {
     } finally {
       setPrecaching('');
     }
+  }
+
+  const [cacheStatus, setCacheStatus] = useState('');
+  async function checkCache() {
+    if (!book || precaching) return;
+    setCacheStatus('확인 중...');
+    const { cached, total } = await checkCacheStatus(book.spreads, {
+      voice,
+      characterVoices: book.character_voices || {},
+    });
+    setCacheStatus(`${cached} / ${total}줄 캐시됨`);
   }
 
   const [spreadIndex, setSpreadIndex] = useState(0);
@@ -461,9 +472,17 @@ export default function Session() {
         {precaching ? (
           <div className="banner info">{precaching}</div>
         ) : (
-          <button className="btn-ghost" onClick={precacheThisBook}>
-            ⚡ 이 책 읽어주기 음성 미리 준비하기
-          </button>
+          <div className="row">
+            <button className="btn-ghost" onClick={precacheThisBook}>
+              ⚡ 이 책 읽어주기 음성 미리 준비하기
+            </button>
+            <button className="btn-ghost" onClick={checkCache}>
+              📊 캐시 상태 확인
+            </button>
+          </div>
+        )}
+        {cacheStatus && !precaching && (
+          <p className="hint" style={{ margin: '4px 0 0', textAlign: 'center' }}>{cacheStatus}</p>
         )}
 
         <div className="dots">
