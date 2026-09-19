@@ -627,12 +627,19 @@ export default function Session() {
       </div>
       {r.comment && <div className="report-comment">{r.comment}</div>}
 
-      {Array.isArray(book?.overall_vocab) && book.overall_vocab.length > 0 && (
+      {book && (
         <>
           <h2>이 책의 핵심 표현</h2>
-          <div className="vocab-list">
-            {book.overall_vocab.map((w) => <VocabWord key={w} word={w} />)}
-          </div>
+          {Array.isArray(book.overall_vocab) && book.overall_vocab.length > 0 ? (
+            <div className="vocab-list">
+              {book.overall_vocab.map((w) => <VocabWord key={w} word={w} />)}
+            </div>
+          ) : (
+            <div className="banner info" style={{ marginBottom: 18 }}>
+              아직 이 책의 핵심 표현이 준비되지 않았어요.{' '}
+              <Link href={`/book/${id}/edit`} style={{ textDecoration: 'underline' }}>책 편집에서 다시 정리하기 →</Link>
+            </div>
+          )}
         </>
       )}
       <Link href="/history"><button className="btn-ghost">📋 지난 리포트 · CSV 내려받기</button></Link>
