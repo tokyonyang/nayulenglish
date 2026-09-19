@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { supabase, supabaseReady } from '@/lib/supabase';
 import { DAY_THEMES, stage2Instructions, stage3Instructions } from '@/lib/prompts';
 import {
-  speakLines, stopSpeaking, spreadLines, chatLines, TTS_VOICES,
+  speakLines, stopSpeaking, spreadLines, chatLines, TTS_VOICES, precacheSpreads,
   recordingSupported, startRecording, stopRecordingAndTranscribe, stopRecordingAsWav,
 } from '@/lib/audio';
 import {
@@ -49,6 +49,20 @@ export default function Session() {
     speakLines([{ text: "Hi there! Let's read a book together.", tone: 'calm' }], {
       slow: false, muted: false, cacheable: true, voice: v,
     });
+  }
+
+  const [precaching, setPrecaching] = useState('');
+  async function precacheThisBook() {
+    if (!book || precaching) return;
+    setPrecaching(`읽어주기 음성 준비 중... (0/${book.spreads.length})`);
+    try {
+      await precacheSpreads(book.spreads, {
+        voice,
+        onProgress: (done, total) => setPrecaching(`읽어주기 음성 준비 중... (${done}/${total})`),
+      });
+    } finally {
+      setPrecaching('');
+    }
   }
 
   const [spreadIndex, setSpreadIndex] = useState(0);
@@ -393,6 +407,14 @@ export default function Session() {
           </button>
         </div>
 
+        {precaching ? (
+          <div className="banner info">{precaching}</div>
+        ) : (
+          <button className="btn-ghost" onClick={precacheThisBook}>
+            ⚡ 이 책 읽어주기 음성 미리 준비하기
+          </button>
+        )}
+
         <div className="dots">
           {book.spreads.map((s, i) => (
             <button
@@ -423,22 +445,22 @@ export default function Session() {
         </div>
 
         <div className="row">
-          <button className="btn-ghost" onClick={() => goTo(spreadIndex - 1)} disabled={isFirst}>◀ 이전 페이지</button>
-          <button className="btn-ghost" onClick={() => goTo(spreadIndex + 1)} disabled={isLast}>다음 페이지 ▶</button>
+          <button className="btn-ghost" onClick={() => goTo(spreadIndex - 1)} disabled={isFirst || !!precaching}>◀ 이전 페이지</button>
+          <button className="btn-ghost" onClick={() => goTo(spreadIndex + 1)} disabled={isLast || !!precaching}>다음 페이지 ▶</button>
         </div>
         <div className="row" style={{ marginTop: 8 }}>
-          <button className="btn-ghost" onClick={() => readSpreadAt(spreadIndex)} disabled={reading}>
+          <button className="btn-ghost" onClick={() => readSpreadAt(spreadIndex)} disabled={reading || !!precaching}>
             {reading ? '🔊 읽는 중...' : '🔊 이 페이지 읽어주기'}
           </button>
           <button className="btn-ghost" onClick={() => setSlow((s) => !s)}>{slow ? '🐢 천천히 (켜짐)' : '🐢 천천히 읽기'}</button>
         </div>
         <div className="row" style={{ marginTop: 8 }}>
-          <button className="btn-ghost" onClick={toggleAutoPlay}>
+          <button className="btn-ghost" onClick={toggleAutoPlay} disabled={!!precaching}>
             {autoPlay ? '⏸ 자동 재생 (켜짐)' : '▶️ 자동으로 끝까지 읽기'}
           </button>
         </div>
 
-        <button className="btn" style={{ marginTop: 14 }} onClick={() => startStage(2)}>이야기 시작하기 →</button>
+        <button className="btn" style={{ marginTop: 14 }} onClick={() => startStage(2)} disabled={!!precaching}>이야기 시작하기 →</button>
       </>
     );
   }
