@@ -45,6 +45,29 @@ main {
   padding: 0 18px 40px;
 }
 
+/* Tablet: a wider column, a touch more breathing room, a 2-up book grid. */
+@media (min-width: 641px) {
+  main { max-width: 680px; padding: 0 28px 48px; }
+  .card-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  .card-grid .card { margin-bottom: 0; }
+  .thumbs { grid-template-columns: repeat(4, 1fr); }
+  .stage-card { padding: 32px 28px; }
+  .stage-text { font-size: 21px; }
+}
+
+/* Desktop: wider still, book grid goes to 3-up, dialog bubbles get a touch
+   more room since the column itself is wider. */
+@media (min-width: 1024px) {
+  main { max-width: 900px; padding: 0 32px 56px; }
+  .card-grid { grid-template-columns: repeat(3, 1fr); }
+  .thumbs { grid-template-columns: repeat(6, 1fr); }
+  .stage-card { padding: 36px 32px; min-height: 220px; }
+  .stage-photo { max-height: 360px; }
+  .stage-text { font-size: 22px; }
+  .transcript { min-height: 46vh; }
+  .bubble { max-width: 70%; }
+}
+
 a { color: inherit; }
 
 h1 { font-family: var(--font-en); font-size: 26px; margin: 0; }

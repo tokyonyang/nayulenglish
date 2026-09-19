@@ -53,23 +53,25 @@ export default function Home() {
       ) : books.length > 0 ? (
         <>
           <h2>읽고 있는 책</h2>
-          {books.map((b) => (
-            <div className="card" key={b.id}>
-              <div className="card-title">{b.title}</div>
-              <div className="card-meta">
-                펼침면 {(b.spreads || []).length}장 · {b.sessions_count || 0}일째 진행
+          <div className="card-grid">
+            {books.map((b) => (
+              <div className="card" key={b.id}>
+                <div className="card-title">{b.title}</div>
+                <div className="card-meta">
+                  펼침면 {(b.spreads || []).length}장 · {b.sessions_count || 0}일째 진행
+                </div>
+                <div className="card-actions">
+                  <Link href={`/book/${b.id}`} style={{ flex: 1, textDecoration: 'none' }}>
+                    <button className="btn">오늘 세션 시작 →</button>
+                  </Link>
+                  <Link href={`/book/${b.id}/edit`}>
+                    <button className="btn-text">편집</button>
+                  </Link>
+                  <button className="btn-text" onClick={() => remove(b.id)}>삭제</button>
+                </div>
               </div>
-              <div className="card-actions">
-                <Link href={`/book/${b.id}`} style={{ flex: 1, textDecoration: 'none' }}>
-                  <button className="btn">오늘 세션 시작 →</button>
-                </Link>
-                <Link href={`/book/${b.id}/edit`}>
-                  <button className="btn-text">편집</button>
-                </Link>
-                <button className="btn-text" onClick={() => remove(b.id)}>삭제</button>
-              </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </>
       ) : (
         !error && <p className="hint">아직 책이 없어요. 새 책을 시작해보세요.</p>
