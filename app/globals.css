@@ -167,6 +167,14 @@ textarea.field { line-height: 1.6; resize: vertical; }
 .report-k { color: var(--ink-soft); white-space: nowrap; }
 .report-comment { background: var(--raised); border: 1px solid var(--line); border-radius: 14px; padding: 14px; font-size: 14px; line-height: 1.6; margin-bottom: 18px; }
 
+.vocab-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 18px; }
+.vocab-word { background: var(--raised); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+.vocab-word-head { display: flex; align-items: center; gap: 8px; }
+.vocab-term { font-weight: 700; font-size: 15px; }
+.vocab-phonetic { color: var(--ink-soft); font-size: 12.5px; }
+.vocab-play { width: 26px; height: 26px; font-size: 11px; margin-left: auto; flex-shrink: 0; }
+.vocab-def { font-size: 12.5px; color: var(--ink-soft); margin-top: 3px; line-height: 1.4; }
+
 .spinner { width: 44px; height: 44px; border-radius: 50%; border: 4px solid var(--line); border-top-color: var(--accent); animation: spin .9s linear infinite; margin: 0 auto; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .center { text-align: center; padding: 60px 0; }
