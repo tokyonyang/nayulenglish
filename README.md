@@ -3,7 +3,7 @@
 만 48개월 나율이를 위한 영어 읽어주기 + 스피킹 연습 앱.
 "나율이 영어 스피킹 프로그램 Master Prompt v2.0" 스펙을 그대로 구현했습니다.
 
-Next.js (App Router) · Vercel · Supabase · OpenAI
+Next.js (App Router) · Vercel · Supabase · Google Drive · OpenAI
 
 ---
 
@@ -30,21 +30,39 @@ Next.js (App Router) · Vercel · Supabase · OpenAI
 ### 1. Supabase
 1. 새 프로젝트를 만듭니다.
 2. SQL Editor 에 `supabase/schema.sql` 내용을 붙여넣고 실행합니다.
-3. Settings → API 에서 **Project URL** 과 **anon public key** 를 복사해둡니다.
+3. 이미 운영 중인 프로젝트라면 SQL Editor에서
+   `supabase/migrations/20260919073855_drive_primary_media.sql`도 실행합니다.
+4. Settings → API 에서 **Project URL**, **publishable/anon key**, **secret key**를 복사해둡니다.
 
 ### 2. Vercel
 1. 이 저장소를 Vercel 에 Import 합니다.
-2. Environment Variables 에 아래 3개를 넣습니다.
+2. Environment Variables 에 아래 값을 넣습니다.
 
 | 이름 | 값 |
 | --- | --- |
 | `OPENAI_API_KEY` | OpenAI API 키 |
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase Project URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon public key |
+| `SUPABASE_SECRET_KEY` | 서버 전용 Supabase secret key (`sb_secret_...`, 브라우저에 노출 금지) |
+| `GOOGLE_OAUTH_CLIENT_ID` | Google OAuth 클라이언트 ID |
+| `GOOGLE_OAUTH_CLIENT_SECRET` | Google OAuth 클라이언트 보안 비밀번호 |
+| `GOOGLE_OAUTH_REFRESH_TOKEN` | Drive 접근용 장기 refresh token |
+| `GOOGLE_DRIVE_BACKUP_FOLDER_ID` | 앱 원본을 보관할 Drive 폴더 ID |
 
 3. Deploy 를 누릅니다. 끝입니다.
 
 이후 GitHub 웹에서 파일을 수정하면 Vercel 이 자동 재배포합니다.
+
+### 사진·음성 저장 방식
+
+- **Google Drive가 원본 저장소**입니다. 새 사진과 읽어주기 음성은 Drive에 먼저 저장합니다.
+- **Supabase Storage는 임시 캐시**입니다. 캐시가 있으면 빠르게 사용합니다.
+- Supabase Storage에서 파일을 삭제해도, 다음 표시·재생 때 Drive 원본을 찾아 자동으로
+  Supabase에 다시 채운 뒤 정상 사용합니다.
+- 기존에 Supabase에만 있던 파일은 책 화면의 **Drive 원본 동기화** 버튼을 한 번 누르면
+  Drive 원본과 `media_assets` 기록이 만들어집니다.
+- `SUPABASE_SECRET_KEY`, Google OAuth 비밀값은 서버 Route Handler에서만 사용되며
+  `NEXT_PUBLIC_` 접두사를 붙이면 안 됩니다.
 
 ---
 
@@ -77,8 +95,11 @@ Next.js (App Router) · Vercel · Supabase · OpenAI
 
 ## 알아둘 점
 
-- 개인용이라 로그인이 없고, Supabase RLS 는 anon 전체 허용으로 열려 있습니다.
-  다른 사람과 함께 쓰려면 `supabase/schema.sql` 의 정책을 auth 기반으로 바꾸세요.
+- 개인용이라 책·리포트 테이블은 현재 anon 접근을 허용합니다. Drive 파일 ID를 담는
+  `media_assets`는 RLS로 막고 서버 secret key만 접근합니다. 다른 사람과 함께 쓰려면
+  책·리포트 정책도 Supabase Auth 기반으로 바꾸세요.
+- Supabase Storage를 비울 때는 `book-photos`, `tts-cache`의 **객체만** 지우세요.
+  `books`, `reports`, `media_assets` 테이블이나 Drive 원본은 지우면 자동 복원이 불가능합니다.
 - Day 수는 그 책의 리포트에 기록된 서로 다른 날짜 수로 계산합니다(최대 7).
   하루를 건너뛰어도 순서가 밀리지 않고, 같은 날 다시 해도 Day 가 중복 증가하지 않습니다.
 - 마이크는 HTTPS 에서만 동작합니다(Vercel 배포본은 해당 없음).

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getAccessToken, fileExistsInFolder, uploadFile } from '@/lib/googleDrive';
+import { storeDurableMedia } from '@/lib/mediaStore';
 
 export const runtime = 'nodejs';
 export const maxDuration = 30;
@@ -17,31 +17,25 @@ function isAllowedSource(url) {
 
 export async function POST(req) {
   try {
-    const { folderId, filename, sourceUrl, mimeType } = await req.json();
-    if (!folderId || !filename || !sourceUrl) {
+    const { bookId, bucket, path, sourceUrl, mimeType } = await req.json();
+    if (!bookId || !bucket || !path || !sourceUrl) {
       return NextResponse.json({ error: '필수 값이 없습니다.' }, { status: 400 });
     }
     if (!isAllowedSource(sourceUrl)) {
       return NextResponse.json({ error: '허용되지 않은 원본 주소입니다.' }, { status: 400 });
     }
 
-    const token = await getAccessToken();
-
-    const already = await fileExistsInFolder({ name: filename, folderId, token });
-    if (already) return NextResponse.json({ skipped: true });
-
     const fileRes = await fetch(sourceUrl);
     if (!fileRes.ok) return NextResponse.json({ error: `원본을 찾지 못했습니다 (${fileRes.status})` }, { status: 404 });
     const buffer = Buffer.from(await fileRes.arrayBuffer());
-
-    await uploadFile({
-      name: filename,
+    const result = await storeDurableMedia({
+      bookId,
+      bucket,
+      path,
       mimeType: mimeType || fileRes.headers.get('content-type') || 'application/octet-stream',
       buffer,
-      folderId,
-      token,
     });
-    return NextResponse.json({ uploaded: true });
+    return NextResponse.json({ created: result.created, updated: !result.created });
   } catch (e) {
     console.error(e);
     return NextResponse.json({ error: String(e.message || e) }, { status: 500 });

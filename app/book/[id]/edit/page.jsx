@@ -73,6 +73,7 @@ export default function EditBook() {
     // (unedited pages) is skipped, so this stays quick on small edits.
     const voice = (typeof window !== 'undefined' && localStorage.getItem('nayul_voice')) || 'coral';
     await precacheSpreads(book.spreads, {
+      bookId: id,
       voice,
       characterVoices: book.characterVoices || {},
       onProgress: (done, total) => setBusy(`읽어주기 음성 준비 중... (${done}/${total})`),

@@ -72,7 +72,7 @@ export default function Session() {
   function previewVoice(v) {
     stopSpeaking();
     speakLines([{ text: "Hi there! Let's read a book together.", tone: 'calm' }], {
-      slow: false, muted: false, cacheable: true, voice: v,
+      slow: false, muted: false, cacheable: false, voice: v,
     });
   }
 
@@ -82,6 +82,7 @@ export default function Session() {
     setPrecaching(`읽어주기 음성 준비 중... (0/${book.spreads.length})`);
     try {
       await precacheSpreads(book.spreads, {
+        bookId: book.id,
         voice,
         characterVoices: book.character_voices || {},
         onProgress: (done, total) => setPrecaching(`읽어주기 음성 준비 중... (${done}/${total})`),
@@ -96,6 +97,7 @@ export default function Session() {
     if (!book || precaching) return;
     setCacheStatus('확인 중...');
     const { cached, total } = await checkCacheStatus(book.spreads, {
+      bookId: book.id,
       voice,
       characterVoices: book.character_voices || {},
     });
@@ -107,7 +109,7 @@ export default function Session() {
     if (!book || backingUp) return;
     setBackingUp('Google Drive 백업 준비 중...');
     try {
-      const { uploaded, skipped, failed, total } = await backupBookToDrive(book, {
+      const { uploaded, updated, failed, total } = await backupBookToDrive(book, {
         voice,
         characterVoices: book.character_voices || {},
         onProgress: (done, totalCount, label) => setBackingUp(`백업 중... (${done}/${totalCount}) ${label || ''}`),
@@ -115,7 +117,7 @@ export default function Session() {
       setBackingUp(
         total === 0
           ? '백업할 파일이 없어요 (사진·음성이 아직 준비되지 않았어요).'
-          : `완료 — 새로 올림 ${uploaded}개, 이미 있어서 건너뜀 ${skipped}개${failed ? `, 실패 ${failed}개` : ''}`
+          : `완료 — 새 원본 ${uploaded}개, 기존 원본 갱신 ${updated}개${failed ? `, 실패 ${failed}개` : ''}`
       );
     } catch (e) {
       setBackingUp(`백업 실패: ${String(e.message || e).slice(0, 150)}`);
@@ -190,7 +192,9 @@ export default function Session() {
     const s = book.spreads[i];
     if (!s) return;
     setReading(true);
-    await speakLines(spreadLines(s, book.character_voices || {}), { slow, muted, cacheable: true, voice });
+    await speakLines(spreadLines(s, book.character_voices || {}), {
+      slow, muted, cacheable: true, voice, bookId: book.id,
+    });
     setReading(false);
   }
 
@@ -504,7 +508,7 @@ export default function Session() {
           <div className="banner info">{backingUp}</div>
         ) : (
           <button className="btn-ghost" onClick={backupToDrive}>
-            ☁️ Google Drive에 백업
+            ☁️ Drive 원본 동기화
           </button>
         )}
 

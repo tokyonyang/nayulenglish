@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase, supabaseReady } from '@/lib/supabase';
 import { blankSpread, enrichSpreads, mergeEnrichment, assignCharacterVoices } from '@/lib/bookEditing';
-import { precacheSpreads } from '@/lib/audio';
+import { precacheSpreads, storeMediaBlob } from '@/lib/audio';
 
 /** Picture books often print a small page number on each page. If most
  *  scanned spreads have one and they're all distinct, use it to reorder —
@@ -75,6 +75,7 @@ async function toJpegCapped(file) {
 
 export default function NewBook() {
   const router = useRouter();
+  const [draftId] = useState(() => crypto.randomUUID());
   const [files, setFiles] = useState([]);
   const [bulk, setBulk] = useState('');
   const [busy, setBusy] = useState('');
@@ -268,13 +269,14 @@ export default function NewBook() {
     const cleanSpreads = book.spreads.map(({ photo, error, textUncertain, detectedPage, ...rest }) => rest);
     const { data, error } = await supabase
       .from('books')
-      .insert({
+      .upsert({
+        id: draftId,
         title: book.title.trim() || 'Untitled Story',
         themes: book.themes,
         overall_vocab: book.overallVocab,
         character_voices: book.characterVoices || {},
         spreads: cleanSpreads,
-      })
+      }, { onConflict: 'id' })
       .select()
       .single();
     if (error) { setBusy(''); setError(error.message); return; }
@@ -286,11 +288,17 @@ export default function NewBook() {
       setBusy(`사진 저장 중... (${i + 1}/${withPhotos.length})`);
       const s = withPhotos[i];
       try {
-        await supabase.storage
-          .from('book-photos')
-          .upload(`${data.id}/${s.number}.jpg`, s.photo, { contentType: 'image/jpeg', upsert: true });
+        await storeMediaBlob({
+          bucket: 'book-photos',
+          path: `${data.id}/${s.number}.jpg`,
+          bookId: data.id,
+          blob: s.photo,
+        });
       } catch (e) {
         console.error('photo upload failed', s.number, e);
+        setBusy('');
+        setError(`펼침면 ${s.number} 사진을 Drive에 저장하지 못했어요. 잠시 후 저장을 다시 눌러주세요.`);
+        return;
       }
     }
 
@@ -298,6 +306,7 @@ export default function NewBook() {
     // session plays instantly instead of generating page-by-page.
     const voice = (typeof window !== 'undefined' && localStorage.getItem('nayul_voice')) || 'coral';
     await precacheSpreads(cleanSpreads, {
+      bookId: data.id,
       voice,
       characterVoices: book.characterVoices || {},
       onProgress: (done, total) => setBusy(`읽어주기 음성 미리 준비 중... (${done}/${total})`),
