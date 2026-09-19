@@ -88,6 +88,7 @@ export default function Session() {
     try {
       await precacheSpreads(book.spreads, {
         voice,
+        characterVoices: book.character_voices || {},
         onProgress: (done, total) => setPrecaching(`읽어주기 음성 준비 중... (${done}/${total})`),
       });
     } finally {
@@ -163,7 +164,7 @@ export default function Session() {
     const s = book.spreads[i];
     if (!s) return;
     setReading(true);
-    await speakLines(spreadLines(s), { slow, muted, cacheable: true, voice });
+    await speakLines(spreadLines(s, book.character_voices || {}), { slow, muted, cacheable: true, voice });
     setReading(false);
   }
 
@@ -450,6 +451,12 @@ export default function Session() {
             🔊 미리듣기
           </button>
         </div>
+
+        {book.character_voices && Object.keys(book.character_voices).length > 0 && (
+          <p className="hint" style={{ margin: '6px 0 0' }}>
+            🎭 {Object.entries(book.character_voices).map(([name, v]) => `${name}(${v})`).join(', ')}는 내레이션과 다른 고정 목소리로 나와요.
+          </p>
+        )}
 
         {precaching ? (
           <div className="banner info">{precaching}</div>
