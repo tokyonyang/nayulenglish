@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase, supabaseReady } from '@/lib/supabase';
-import { blankSpread, enrichSpreads, mergeEnrichment } from '@/lib/bookEditing';
+import { blankSpread, enrichSpreads, mergeEnrichment, assignCharacterVoices } from '@/lib/bookEditing';
 import { precacheSpreads } from '@/lib/audio';
 
 /** Picture books often print a small page number on each page. If most
@@ -164,6 +164,7 @@ export default function NewBook() {
         title: enr?.title || 'My Picture Book',
         themes: enr?.themes || '',
         overallVocab: Array.isArray(enr?.overallVocab) ? enr.overallVocab : [],
+        characterVoices: assignCharacterVoices({}, enr?.characters),
         spreads: merge(base, enr),
       });
     } catch (e) {
@@ -189,11 +190,12 @@ export default function NewBook() {
         title: enr?.title || 'My Picture Book',
         themes: enr?.themes || '',
         overallVocab: Array.isArray(enr?.overallVocab) ? enr.overallVocab : [],
+        characterVoices: assignCharacterVoices({}, enr?.characters),
         spreads: merge(base, enr),
       });
     } catch (e) {
       setError(String(e.message || e));
-      setBook({ title: 'My Picture Book', themes: '', overallVocab: [], spreads: base });
+      setBook({ title: 'My Picture Book', themes: '', overallVocab: [], characterVoices: {}, spreads: base });
     } finally {
       setBusy('');
     }
@@ -209,6 +211,7 @@ export default function NewBook() {
         title: enr?.title || b.title,
         themes: enr?.themes || b.themes,
         overallVocab: Array.isArray(enr?.overallVocab) ? enr.overallVocab : b.overallVocab,
+        characterVoices: assignCharacterVoices(b.characterVoices, enr?.characters),
         spreads: merge(b.spreads, enr),
       }));
     } catch (e) {
@@ -269,6 +272,7 @@ export default function NewBook() {
         title: book.title.trim() || 'Untitled Story',
         themes: book.themes,
         overall_vocab: book.overallVocab,
+        character_voices: book.characterVoices || {},
         spreads: cleanSpreads,
       })
       .select()
@@ -295,6 +299,7 @@ export default function NewBook() {
     const voice = (typeof window !== 'undefined' && localStorage.getItem('nayul_voice')) || 'coral';
     await precacheSpreads(cleanSpreads, {
       voice,
+      characterVoices: book.characterVoices || {},
       onProgress: (done, total) => setBusy(`읽어주기 음성 미리 준비 중... (${done}/${total})`),
     });
 
@@ -328,6 +333,11 @@ export default function NewBook() {
           onChange={(e) => setBook({ ...book, title: e.target.value })}
         />
         {book.themes && <p className="hint">{book.themes}</p>}
+        {book.characterVoices && Object.keys(book.characterVoices).length > 0 && (
+          <p className="hint">
+            🎭 등장인물 목소리: {Object.entries(book.characterVoices).map(([name, v]) => `${name}(${v})`).join(', ')}
+          </p>
+        )}
 
         {book.spreads.map((s, i) => (
           <div className={`spread-row ${s.error || s.textUncertain ? 'warn' : ''}`} key={s.number}>
