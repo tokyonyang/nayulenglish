@@ -194,6 +194,27 @@ export default function Session() {
   const [micLevel, setMicLevel] = useState(0);
   const [wrapUp, setWrapUp] = useState(false);
   const [elapsed, setElapsed] = useState(0);
+  const [paused, setPaused] = useState(false);
+  const pausedRef = useRef(false);
+  const pauseStartRef = useRef(0);
+  useEffect(() => { pausedRef.current = paused; }, [paused]);
+
+  function togglePause() {
+    if (paused) {
+      // Resume — shift this stage's start time forward by however long we
+      // were paused, so the session-duration stats in the final report
+      // don't count the pause as speaking/listening time.
+      const pausedMs = Date.now() - pauseStartRef.current;
+      const st = stage.current[stageNum];
+      if (st.startedAt) st.startedAt += pausedMs;
+      setPaused(false);
+    } else {
+      stopSpeaking();
+      if (listening) cancelListening();
+      pauseStartRef.current = Date.now();
+      setPaused(true);
+    }
+  }
 
   const [report, setReport] = useState(null);
 
@@ -222,6 +243,7 @@ export default function Session() {
   useEffect(() => {
     if (screen !== 'chat') return;
     const t = setInterval(() => {
+      if (pausedRef.current) return; // freeze the displayed time while paused
       const st = stage.current[stageNum];
       if (st.startedAt) setElapsed(Math.floor((Date.now() - st.startedAt) / 1000));
     }, 1000);
@@ -325,7 +347,7 @@ export default function Session() {
     // network round trip — otherwise a fast next turn can start (and begin
     // its own speakLines call) while this reply is still talking, and two
     // <audio> elements end up playing over each other.
-    if (speak) {
+    if (speak && !pausedRef.current) {
       setSpeaking(true);
       try {
         await speakLines(chatLines(speak), { slow, muted, voice });
@@ -432,7 +454,7 @@ export default function Session() {
   const autoListenBusy = useRef(false);
   useEffect(() => {
     if (screen !== 'chat' || stageNum === undefined) return;
-    if (thinking || speaking || recording || listening || wrapUp) return;
+    if (thinking || speaking || recording || listening || wrapUp || paused) return;
     if (!recordingSupported()) return;
     autoListenBusy.current = true;
     setListening(true);
@@ -454,7 +476,7 @@ export default function Session() {
         autoListenBusy.current = false;
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [screen, thinking, speaking, recording, listening, wrapUp, messages]);
+  }, [screen, thinking, speaking, recording, listening, wrapUp, paused, messages]);
 
   /* ---------- report ---------- */
   async function finish() {
@@ -678,6 +700,7 @@ export default function Session() {
           <Link href="/"><button className="btn-icon" onClick={() => { if (listening) cancelListening(); stopSpeaking(); }}>←</button></Link>
           <span className="title">{stageNum === 2 ? '📖 책 이야기' : '🌞 오늘 이야기'}</span>
           <div className="hgroup">
+            <button className="btn-icon" onClick={togglePause}>{paused ? '▶' : '⏸'}</button>
             <button className="btn-icon" onClick={() => { setMuted((m) => !m); stopSpeaking(); }}>{muted ? '🔇' : '🔊'}</button>
             <span style={{ fontVariantNumeric: 'tabular-nums', color: 'var(--ink-soft)', fontSize: 14 }}>
               {Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, '0')}
@@ -694,6 +717,11 @@ export default function Session() {
           <div ref={bottom} />
         </div>
 
+        {paused && (
+          <div className="banner info" style={{ textAlign: 'center' }}>
+            ⏸ 일시정지됨 — ▶ 버튼을 눌러 계속하기
+          </div>
+        )}
         {wrapUp && <div className="banner info">슬슬 마무리할 시간이에요 🌙</div>}
 
         {listening && (
@@ -708,11 +736,11 @@ export default function Session() {
               <button
                 className={`mic ${recording || listening ? 'rec' : ''}`}
                 onClick={() => toggleMic('en')}
-                disabled={thinking || speaking}
+                disabled={thinking || speaking || paused}
               >
                 {recording || listening ? '■' : '🎤EN'}
               </button>
-              <button className="mic" onClick={() => toggleMic('ko')} disabled={thinking || speaking}>🎤KO</button>
+              <button className="mic" onClick={() => toggleMic('ko')} disabled={thinking || speaking || paused}>🎤KO</button>
             </>
           )}
           <input
@@ -720,15 +748,15 @@ export default function Session() {
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') send(); }}
             placeholder="나율이가 말한 내용을 입력해요"
-            disabled={thinking || speaking}
+            disabled={thinking || speaking || paused}
           />
-          <button className="send" onClick={() => send()} disabled={thinking || speaking}>보내기</button>
+          <button className="send" onClick={() => send()} disabled={thinking || speaking || paused}>보내기</button>
         </div>
 
         <div className="row" style={{ marginTop: 10 }}>
           <button
             className="btn-ghost"
-            disabled={thinking || speaking}
+            disabled={thinking || speaking || paused}
             onClick={() => {
               const last = [...messages].reverse().find((m) => m.role === 'assistant');
               if (!last) return;
@@ -743,7 +771,7 @@ export default function Session() {
           {stageNum === 2 ? (
             <button
               className="btn"
-              disabled={thinking || speaking}
+              disabled={thinking || speaking || paused}
               onClick={() => { if (listening) cancelListening(); stage.current[2].endedAt = Date.now(); startStage(3); }}
             >
               다음: 오늘 이야기 →
@@ -751,7 +779,7 @@ export default function Session() {
           ) : (
             <button
               className="btn"
-              disabled={thinking || speaking}
+              disabled={thinking || speaking || paused}
               onClick={() => { if (listening) cancelListening(); finish(); }}
             >
               세션 마무리 →
