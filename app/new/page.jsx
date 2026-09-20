@@ -48,6 +48,31 @@ async function convertOnce(file, maxSide, quality) {
   }
 }
 
+function isHeic(file) {
+  const type = String(file?.type || '').toLowerCase();
+  const name = String(file?.name || '').toLowerCase();
+  return type === 'image/heic' || type === 'image/heif' || /\.(heic|heif)$/.test(name);
+}
+
+async function browserReadableImage(file) {
+  if (!isHeic(file)) return file;
+
+  try {
+    // createImageBitmap cannot decode HEIC consistently (especially in
+    // Chromium on Windows). Convert it explicitly before canvas resizing.
+    const { default: heic2any } = await import('heic2any');
+    const result = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.9 });
+    const jpeg = Array.isArray(result) ? result[0] : result;
+    if (!jpeg) throw new Error('HEIC 변환 결과가 비어 있습니다.');
+    return new File([jpeg], `${file.name.replace(/\.(heic|heif)$/i, '') || 'spread'}.jpg`, {
+      type: 'image/jpeg',
+    });
+  } catch (error) {
+    console.error('HEIC conversion failed', error);
+    throw new Error(`“${file.name}” HEIC 사진을 JPG로 변환하지 못했어요. 사진을 JPG로 저장한 뒤 다시 선택해주세요.`);
+  }
+}
+
 // Vercel Functions cap request bodies around 4.5MB. Modern phone cameras
 // routinely shoot 8MB+ originals, so every photo gets compressed down to a
 // safe per-image size first, then batches are packed by *actual* converted
@@ -59,18 +84,30 @@ const BATCH_BUDGET_BYTES = 3.2 * 1024 * 1024;
  *  reliably, shrinking further in steps until it's safely under the cap —
  *  one pass isn't always enough for a very detailed high-res original. */
 async function toJpegCapped(file) {
+  const readable = await browserReadableImage(file);
   let side = 1500;
   let quality = 0.85;
-  let blob = await convertOnce(file, side, quality);
-  if (!blob) return file; // canvas failed entirely — send original, server tolerates it
+  let blob = await convertOnce(readable, side, quality);
+  if (!blob) {
+    throw new Error(`“${file.name}” 사진을 읽지 못했어요. JPG, PNG, WEBP 또는 HEIC 파일인지 확인해주세요.`);
+  }
 
-  for (let attempt = 0; attempt < 4 && blob.size > PER_IMAGE_CAP_BYTES; attempt++) {
-    quality = Math.max(0.5, quality - 0.15);
-    side = Math.max(700, Math.round(side * 0.8));
-    const next = await convertOnce(file, side, quality);
+  for (let attempt = 0; attempt < 6 && blob.size > PER_IMAGE_CAP_BYTES; attempt++) {
+    quality = Math.max(0.42, quality - 0.1);
+    side = Math.max(560, Math.round(side * 0.78));
+    const next = await convertOnce(readable, side, quality);
     if (next) blob = next;
   }
+  if (blob.size > PER_IMAGE_CAP_BYTES) {
+    throw new Error(`“${file.name}” 사진 용량을 충분히 줄이지 못했어요. 화면을 캡처한 이미지로 다시 시도해주세요.`);
+  }
   return new File([blob], 'spread.jpg', { type: 'image/jpeg' });
+}
+
+function acceptedImage(file) {
+  const type = String(file?.type || '').toLowerCase();
+  const name = String(file?.name || '').toLowerCase();
+  return type.startsWith('image/') || /\.(jpe?g|png|webp|heic|heif)$/.test(name);
 }
 
 export default function NewBook() {
@@ -85,6 +122,20 @@ export default function NewBook() {
   const [meta, setMeta] = useState({ title: '', author: '', series: '' });
   const [coverFile, setCoverFile] = useState(null);
   const [identifying, setIdentifying] = useState(false);
+
+  function addPhotos(fileList) {
+    const selected = Array.from(fileList || []);
+    const accepted = selected.filter(acceptedImage);
+    const rejected = selected.length - accepted.length;
+    if (accepted.length) setFiles((prev) => [...prev, ...accepted]);
+    if (!selected.length) {
+      setError('선택된 사진이 없어요. 사진 앱에서 이미지를 다시 선택해주세요.');
+    } else if (rejected) {
+      setError(`${rejected}개 파일은 지원하지 않는 형식이라 제외했어요. JPG, PNG, WEBP, HEIC 사진을 선택해주세요.`);
+    } else {
+      setError('');
+    }
+  }
 
   async function identifyCover() {
     if (!coverFile) return;
@@ -455,8 +506,9 @@ export default function NewBook() {
         <label className="file-drop" style={{ flex: 1, padding: '14px' }}>
           {coverFile ? `📕 ${coverFile.name.slice(0, 20)}` : '📷 표지 사진 선택'}
           <input
+            id="book-cover-file"
             type="file"
-            accept="image/*"
+            accept="image/*,.heic,.heif"
             hidden
             onChange={(e) => setCoverFile(e.target.files?.[0] || null)}
           />
@@ -478,13 +530,14 @@ export default function NewBook() {
       </p>
       <label className="file-drop">
         📷 사진 선택하기
-        <input
-          type="file"
-          accept="image/*"
-          multiple
-          hidden
-          onChange={(e) => { setFiles((p) => [...p, ...Array.from(e.target.files || [])]); e.target.value = ''; }}
-        />
+          <input
+            id="book-spread-files"
+            type="file"
+            accept="image/*,.heic,.heif"
+            multiple
+            hidden
+            onChange={(e) => { addPhotos(e.target.files); e.target.value = ''; }}
+          />
       </label>
       <p className="hint" style={{ margin: '6px 0 0', fontSize: 12.5 }}>
         선택된 사진: {files.length}장
