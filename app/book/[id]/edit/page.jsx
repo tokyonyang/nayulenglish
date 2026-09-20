@@ -38,12 +38,13 @@ export default function EditBook() {
     setNote('');
     try {
       const enr = await enrichSpreads(book.spreads);
+      const characterVoices = await assignCharacterVoices(book.characterVoices, enr?.characters);
       setBook((b) => ({
         ...b,
         title: enr?.title || b.title,
         themes: enr?.themes || b.themes,
         overallVocab: Array.isArray(enr?.overallVocab) ? enr.overallVocab : b.overallVocab,
-        characterVoices: assignCharacterVoices(b.characterVoices, enr?.characters),
+        characterVoices,
         spreads: mergeEnrichment(b.spreads, enr),
       }));
       setNote('다시 정리했어요. 목소리 연출도 새로 반영됐어요 — 아래 저장을 눌러주세요.');
