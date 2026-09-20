@@ -8,6 +8,7 @@ import { DAY_THEMES, stage2Instructions, stage3Instructions } from '@/lib/prompt
 import {
   speakLines, stopSpeaking, spreadLines, chatLines, TTS_VOICES, precacheSpreads, checkCacheStatus,
   recordingSupported, startRecording, stopRecordingAndTranscribe, stopRecordingAsWav,
+  listenUntilSilence, forceStopListening, cancelListening,
   spreadPhotoUrl, spreadPhotoFallbackUrl, backupBookToDrive,
 } from '@/lib/audio';
 import {
@@ -189,6 +190,8 @@ export default function Session() {
   const [thinking, setThinking] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const [recording, setRecording] = useState(false);
+  const [listening, setListening] = useState(false);
+  const [micLevel, setMicLevel] = useState(0);
   const [wrapUp, setWrapUp] = useState(false);
   const [elapsed, setElapsed] = useState(0);
 
@@ -361,6 +364,7 @@ export default function Session() {
   async function send(text) {
     const t = (text ?? input).trim();
     if (!t || thinking || speaking) return;
+    if (listening) cancelListening(); // typing instead — abandon the open mic so it doesn't also fire
     const st = stage.current[stageNum];
     st.turns.push({ role: 'user', content: t });
     setMessages((m) => [...m, { role: 'child', text: t }]);
@@ -381,6 +385,17 @@ export default function Session() {
   }
 
   async function toggleMic(lang) {
+    if (lang === 'en' && listening) {
+      // Already auto-listening — a tap means "I'm done, send it now"
+      // instead of waiting for silence to be detected on its own.
+      forceStopListening();
+      return;
+    }
+    if (lang === 'ko' && listening) {
+      // Switching to the Korean fallback mid-listen — abandon the EN
+      // auto-listen without sending anything from it.
+      cancelListening();
+    }
     if (recording) {
       setRecording(false);
       try {
@@ -405,6 +420,33 @@ export default function Session() {
       }
     }
   }
+
+  // Hands-free: once it's her turn (nothing thinking, nobody talking, no
+  // recording already in flight) the mic opens on its own. It stops itself
+  // once she's said something and then gone quiet, and sends automatically
+  // — no tap needed for either end. Tapping 🎤EN while this is running just
+  // finishes it early; tapping 🎤KO abandons it in favor of the Korean
+  // fallback. Silence with nothing said just tries again on its own.
+  const autoListenBusy = useRef(false);
+  useEffect(() => {
+    if (screen !== 'chat' || stageNum === undefined) return;
+    if (thinking || speaking || recording || listening || wrapUp) return;
+    if (!recordingSupported()) return;
+    autoListenBusy.current = true;
+    setListening(true);
+    listenUntilSilence({ onLevel: setMicLevel })
+      .then(async (base64Wav) => {
+        setListening(false);
+        autoListenBusy.current = false;
+        if (base64Wav) await sendAudio(base64Wav);
+      })
+      .catch((e) => {
+        console.error('auto-listen failed', e);
+        setListening(false);
+        autoListenBusy.current = false;
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [screen, thinking, speaking, recording, listening, wrapUp, messages]);
 
   /* ---------- report ---------- */
   async function finish() {
@@ -625,7 +667,7 @@ export default function Session() {
     return (
       <>
         <div className="topbar">
-          <Link href="/"><button className="btn-icon" onClick={stopSpeaking}>←</button></Link>
+          <Link href="/"><button className="btn-icon" onClick={() => { if (listening) cancelListening(); stopSpeaking(); }}>←</button></Link>
           <span className="title">{stageNum === 2 ? '📖 책 이야기' : '🌞 오늘 이야기'}</span>
           <div className="hgroup">
             <button className="btn-icon" onClick={() => { setMuted((m) => !m); stopSpeaking(); }}>{muted ? '🔇' : '🔊'}</button>
@@ -646,13 +688,23 @@ export default function Session() {
 
         {wrapUp && <div className="banner info">슬슬 마무리할 시간이에요 🌙</div>}
 
+        {listening && (
+          <div className="banner info" style={{ textAlign: 'center' }}>
+            🎤 듣고 있어요... <span style={{ opacity: 0.4 + micLevel * 0.6 }}>●</span>
+          </div>
+        )}
+
         <div className="inputbar">
           {recordingSupported() && (
             <>
-              <button className={`mic ${recording ? 'rec' : ''}`} onClick={() => toggleMic('en')} disabled={thinking || speaking}>
-                {recording ? '■' : '🎤EN'}
+              <button
+                className={`mic ${recording || listening ? 'rec' : ''}`}
+                onClick={() => toggleMic('en')}
+                disabled={thinking || speaking}
+              >
+                {recording || listening ? '■' : '🎤EN'}
               </button>
-              <button className="mic" onClick={() => toggleMic('ko')} disabled={thinking || speaking || recording}>🎤KO</button>
+              <button className="mic" onClick={() => toggleMic('ko')} disabled={thinking || speaking}>🎤KO</button>
             </>
           )}
           <input
@@ -672,6 +724,7 @@ export default function Session() {
             onClick={() => {
               const last = [...messages].reverse().find((m) => m.role === 'assistant');
               if (!last) return;
+              if (listening) cancelListening();
               stopSpeaking();
               setSpeaking(true);
               speakLines(chatLines(last.text), { slow, muted, voice }).finally(() => setSpeaking(false));
@@ -680,11 +733,21 @@ export default function Session() {
             🔊 다시 듣기
           </button>
           {stageNum === 2 ? (
-            <button className="btn" disabled={thinking || speaking} onClick={() => { stage.current[2].endedAt = Date.now(); startStage(3); }}>
+            <button
+              className="btn"
+              disabled={thinking || speaking}
+              onClick={() => { if (listening) cancelListening(); stage.current[2].endedAt = Date.now(); startStage(3); }}
+            >
               다음: 오늘 이야기 →
             </button>
           ) : (
-            <button className="btn" disabled={thinking || speaking} onClick={finish}>세션 마무리 →</button>
+            <button
+              className="btn"
+              disabled={thinking || speaking}
+              onClick={() => { if (listening) cancelListening(); finish(); }}
+            >
+              세션 마무리 →
+            </button>
           )}
         </div>
       </>
