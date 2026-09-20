@@ -7,12 +7,12 @@ export const maxDuration = 120;
 
 export async function POST(req) {
   try {
-    const { spreads } = await req.json();
+    const { spreads, bookMeta } = await req.json();
     if (!Array.isArray(spreads) || !spreads.length) {
       return NextResponse.json({ error: '펼침면이 없습니다.' }, { status: 400 });
     }
     const data = await withRetries(() => chatJSON({
-      messages: [{ role: 'user', content: enrichmentPrompt(spreads) }],
+      messages: [{ role: 'user', content: enrichmentPrompt(spreads, bookMeta) }],
       // Scale with page count — voiceDirection + per-speaker dialogue
       // segments make each spread's output noticeably longer, so a fixed
       // cap was truncating big books.
