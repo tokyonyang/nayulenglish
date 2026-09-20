@@ -730,6 +730,10 @@ export default function Session() {
           </div>
         )}
 
+        <button className="btn-ghost" onClick={togglePause} style={{ marginBottom: 8 }}>
+          {paused ? '▶ 계속하기' : '⏸ 일시정지'}
+        </button>
+
         <div className="inputbar">
           {recordingSupported() && (
             <>
