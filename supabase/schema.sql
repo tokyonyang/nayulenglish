@@ -131,3 +131,19 @@ revoke all on table media_assets from anon, authenticated;
 -- 새 저장은 서버 API를 거치므로 익명 Storage 쓰기는 더 이상 필요하지 않습니다.
 drop policy if exists "tts-cache public write" on storage.objects;
 drop policy if exists "book-photos public write" on storage.objects;
+
+-- ── 등장인물 목소리를 책 전체(전 세계)에 걸쳐 공유 ──────────────────────────
+-- Elephant & Piggie 같은 시리즈는 같은 인물이 여러 책에 등장합니다. 예전에는
+-- 책마다 따로 배정해서 같은 인물이 책마다 다른 목소리로 나올 수 있었습니다.
+-- character_key는 정규화(소문자·trim)한 이름이라 "Gerald"/"gerald"도 같은
+-- 항목으로 취급됩니다. books.character_voices는 캐시로 계속 남겨두되,
+-- 새로 배정할 때는 여기를 먼저 찾아보고, 없으면 새로 만들어 여기 저장합니다.
+create table if not exists character_voices (
+  character_key text primary key,
+  display_name text not null,
+  voice text not null,
+  created_at timestamptz not null default now()
+);
+alter table character_voices enable row level security;
+drop policy if exists "character_voices all access" on character_voices;
+create policy "character_voices all access" on character_voices for all using (true) with check (true);
