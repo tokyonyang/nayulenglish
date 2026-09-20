@@ -23,6 +23,8 @@ export default function EditBook() {
       if (error || !data) { setError(error?.message || '책을 찾지 못했어요.'); setBusy(''); return; }
       setBook({
         title: data.title,
+        author: data.author || '',
+        series: data.series || '',
         themes: data.themes || '',
         overallVocab: data.overall_vocab || [],
         characterVoices: data.character_voices || {},
@@ -37,11 +39,11 @@ export default function EditBook() {
     setError('');
     setNote('');
     try {
-      const enr = await enrichSpreads(book.spreads);
+      const enr = await enrichSpreads(book.spreads, { title: book.title, author: book.author, series: book.series });
       const characterVoices = await assignCharacterVoices(book.characterVoices, enr?.characters);
       setBook((b) => ({
         ...b,
-        title: enr?.title || b.title,
+        title: b.title || enr?.title || b.title,
         themes: enr?.themes || b.themes,
         overallVocab: Array.isArray(enr?.overallVocab) ? enr.overallVocab : b.overallVocab,
         characterVoices,
@@ -62,6 +64,8 @@ export default function EditBook() {
       .from('books')
       .update({
         title: book.title.trim() || 'Untitled Story',
+        author: book.author || '',
+        series: book.series || '',
         themes: book.themes,
         overall_vocab: book.overallVocab,
         character_voices: book.characterVoices || {},
@@ -128,6 +132,23 @@ export default function EditBook() {
         value={book.title}
         onChange={(e) => setBook({ ...book, title: e.target.value })}
       />
+      <label className="label">저자 (선택)</label>
+      <input
+        className="field en"
+        placeholder="예: Mo Willems"
+        value={book.author || ''}
+        onChange={(e) => setBook({ ...book, author: e.target.value })}
+      />
+      <label className="label">시리즈 (선택)</label>
+      <input
+        className="field en"
+        placeholder="예: Elephant & Piggie"
+        value={book.series || ''}
+        onChange={(e) => setBook({ ...book, series: e.target.value })}
+      />
+      <p className="hint" style={{ margin: '4px 0 14px' }}>
+        저자·시리즈를 채우고 "다시 정리하기"를 누르면, AI가 아는 책이면 그 배경지식을 실감나게 반영합니다.
+      </p>
       {book.themes && <p className="hint">{book.themes}</p>}
       {book.characterVoices && Object.keys(book.characterVoices).length > 0 && (
         <p className="hint">

@@ -147,3 +147,11 @@ create table if not exists character_voices (
 alter table character_voices enable row level security;
 drop policy if exists "character_voices all access" on character_voices;
 create policy "character_voices all access" on character_voices for all using (true) with check (true);
+
+-- ── 저자·시리즈 — AI가 실제 배경지식을 활용해 더 실감나게 읽도록 ──────────
+-- 유명한 책/시리즈면(예: Mo Willems의 Elephant & Piggie) AI가 이미 등장인물
+-- 성격, 특유의 어조를 알고 있는 경우가 많습니다. 스캔한 텍스트만으로는 이걸
+-- 못 살리므로, 제목 외에 저자·시리즈를 따로 저장해 정리(enrich) 단계에서
+-- 참고하게 합니다.
+alter table books add column if not exists author text default '';
+alter table books add column if not exists series text default '';

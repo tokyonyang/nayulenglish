@@ -82,6 +82,32 @@ export default function NewBook() {
   const [error, setError] = useState('');
   const [note, setNote] = useState('');
   const [book, setBook] = useState(null);
+  const [meta, setMeta] = useState({ title: '', author: '', series: '' });
+  const [coverFile, setCoverFile] = useState(null);
+  const [identifying, setIdentifying] = useState(false);
+
+  async function identifyCover() {
+    if (!coverFile) return;
+    setIdentifying(true);
+    setError('');
+    try {
+      const converted = await toJpegCapped(coverFile);
+      const form = new FormData();
+      form.append('cover', converted);
+      const res = await fetch('/api/identify-cover', { method: 'POST', body: form });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      setMeta((m) => ({
+        title: data.title || m.title,
+        author: data.author || m.author,
+        series: data.series || m.series,
+      }));
+    } catch (e) {
+      setError(String(e.message || e));
+    } finally {
+      setIdentifying(false);
+    }
+  }
 
   function moveFile(i, dir) {
     setFiles((prev) => {
@@ -152,7 +178,7 @@ export default function NewBook() {
       setBusy('책 전체 이야기를 정리하고 있어요...');
       let enr = null;
       if (base.some((s) => s.englishText.trim())) {
-        try { enr = await enrich(base); } catch (e) { console.error(e); }
+        try { enr = await enrich(base, meta); } catch (e) { console.error(e); }
       }
       setNote(
         autoSorted
@@ -163,7 +189,9 @@ export default function NewBook() {
       );
       const characterVoices = await assignCharacterVoices({}, enr?.characters);
       setBook({
-        title: enr?.title || 'My Picture Book',
+        title: meta.title || enr?.title || 'My Picture Book',
+        author: meta.author || '',
+        series: meta.series || '',
         themes: enr?.themes || '',
         overallVocab: Array.isArray(enr?.overallVocab) ? enr.overallVocab : [],
         characterVoices,
@@ -187,10 +215,12 @@ export default function NewBook() {
 
     setBusy('책을 정리하고 있어요...');
     try {
-      const enr = await enrich(base);
+      const enr = await enrich(base, meta);
       const characterVoices = await assignCharacterVoices({}, enr?.characters);
       setBook({
-        title: enr?.title || 'My Picture Book',
+        title: meta.title || enr?.title || 'My Picture Book',
+        author: meta.author || '',
+        series: meta.series || '',
         themes: enr?.themes || '',
         overallVocab: Array.isArray(enr?.overallVocab) ? enr.overallVocab : [],
         characterVoices,
@@ -198,7 +228,7 @@ export default function NewBook() {
       });
     } catch (e) {
       setError(String(e.message || e));
-      setBook({ title: 'My Picture Book', themes: '', overallVocab: [], characterVoices: {}, spreads: base });
+      setBook({ title: meta.title || 'My Picture Book', author: meta.author || '', series: meta.series || '', themes: '', overallVocab: [], characterVoices: {}, spreads: base });
     } finally {
       setBusy('');
     }
@@ -208,11 +238,11 @@ export default function NewBook() {
     setBusy('다시 정리하고 있어요...');
     setError('');
     try {
-      const enr = await enrich(book.spreads);
+      const enr = await enrich(book.spreads, { title: book.title, author: book.author, series: book.series });
       const characterVoices = await assignCharacterVoices(book.characterVoices, enr?.characters);
       setBook((b) => ({
         ...b,
-        title: enr?.title || b.title,
+        title: b.title || enr?.title || b.title,
         themes: enr?.themes || b.themes,
         overallVocab: Array.isArray(enr?.overallVocab) ? enr.overallVocab : b.overallVocab,
         characterVoices,
@@ -224,6 +254,7 @@ export default function NewBook() {
       setBusy('');
     }
   }
+
 
   async function retryFailed() {
     const failed = book.spreads.filter((s) => s.error && s.photo);
@@ -275,6 +306,8 @@ export default function NewBook() {
       .upsert({
         id: draftId,
         title: book.title.trim() || 'Untitled Story',
+        author: book.author || '',
+        series: book.series || '',
         themes: book.themes,
         overall_vocab: book.overallVocab,
         character_voices: book.characterVoices || {},
@@ -339,11 +372,29 @@ export default function NewBook() {
 
         {error && <div className="banner">{error}</div>}
         {note && <div className="banner info">{note}</div>}
+        <label className="label">책 제목</label>
         <input
           className="field en"
           value={book.title}
           onChange={(e) => setBook({ ...book, title: e.target.value })}
         />
+        <label className="label">저자 (선택)</label>
+        <input
+          className="field en"
+          placeholder="예: Mo Willems"
+          value={book.author || ''}
+          onChange={(e) => setBook({ ...book, author: e.target.value })}
+        />
+        <label className="label">시리즈 (선택)</label>
+        <input
+          className="field en"
+          placeholder="예: Elephant & Piggie"
+          value={book.series || ''}
+          onChange={(e) => setBook({ ...book, series: e.target.value })}
+        />
+        <p className="hint" style={{ margin: '4px 0 14px' }}>
+          저자·시리즈를 채우고 "다시 정리하기"를 누르면, AI가 아는 책이면 그 배경지식을 실감나게 반영합니다.
+        </p>
         {book.themes && <p className="hint">{book.themes}</p>}
         {book.characterVoices && Object.keys(book.characterVoices).length > 0 && (
           <p className="hint">
@@ -397,6 +448,29 @@ export default function NewBook() {
       </div>
 
       {error && <div className="banner">{error}</div>}
+
+      <h2>책 정보 (선택이지만, 넣으면 훨씬 실감나게 읽어줍니다)</h2>
+      <label className="label">표지 사진으로 자동 채우기</label>
+      <div className="row" style={{ alignItems: 'center' }}>
+        <label className="file-drop" style={{ flex: 1, padding: '14px' }}>
+          {coverFile ? `📕 ${coverFile.name.slice(0, 20)}` : '📷 표지 사진 선택'}
+          <input
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={(e) => setCoverFile(e.target.files?.[0] || null)}
+          />
+        </label>
+        <button className="btn-ghost" style={{ marginTop: 0, flexShrink: 0 }} onClick={identifyCover} disabled={!coverFile || identifying}>
+          {identifying ? '인식 중...' : '✨ 자동 인식'}
+        </button>
+      </div>
+      <label className="label">책 제목</label>
+      <input className="field en" placeholder="예: Should I Share My Ice Cream?" value={meta.title} onChange={(e) => setMeta({ ...meta, title: e.target.value })} />
+      <label className="label">저자</label>
+      <input className="field en" placeholder="예: Mo Willems" value={meta.author} onChange={(e) => setMeta({ ...meta, author: e.target.value })} />
+      <label className="label">시리즈</label>
+      <input className="field en" placeholder="예: Elephant & Piggie" value={meta.series} onChange={(e) => setMeta({ ...meta, series: e.target.value })} />
 
       <h2>방법 1 · 사진으로 만들기</h2>
       <p className="hint">
