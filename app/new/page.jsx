@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase, supabaseReady } from '@/lib/supabase';
@@ -80,6 +80,81 @@ async function browserReadableImage(file) {
 const PER_IMAGE_CAP_BYTES = 1.2 * 1024 * 1024;
 const BATCH_BUDGET_BYTES = 3.2 * 1024 * 1024;
 
+// A failed database save must not make a fully scanned book disappear.
+// IndexedDB can preserve the compressed File/Blob objects inside each spread,
+// unlike localStorage, so the confirmation screen survives refreshes and
+// accidental navigation until the book is successfully saved.
+const DRAFT_DB_NAME = 'hohobook-local';
+const DRAFT_STORE_NAME = 'drafts';
+const NEW_BOOK_DRAFT_KEY = 'new-book';
+
+function openDraftDb() {
+  return new Promise((resolve, reject) => {
+    if (typeof indexedDB === 'undefined') {
+      reject(new Error('IndexedDB is unavailable'));
+      return;
+    }
+    const request = indexedDB.open(DRAFT_DB_NAME, 1);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(DRAFT_STORE_NAME)) {
+        db.createObjectStore(DRAFT_STORE_NAME, { keyPath: 'key' });
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error('Failed to open draft storage'));
+  });
+}
+
+async function loadNewBookDraft() {
+  const db = await openDraftDb();
+  try {
+    return await new Promise((resolve, reject) => {
+      const request = db.transaction(DRAFT_STORE_NAME, 'readonly')
+        .objectStore(DRAFT_STORE_NAME)
+        .get(NEW_BOOK_DRAFT_KEY);
+      request.onsuccess = () => resolve(request.result || null);
+      request.onerror = () => reject(request.error || new Error('Failed to load draft'));
+    });
+  } finally {
+    db.close();
+  }
+}
+
+async function saveNewBookDraft(draft) {
+  const db = await openDraftDb();
+  try {
+    await new Promise((resolve, reject) => {
+      const transaction = db.transaction(DRAFT_STORE_NAME, 'readwrite');
+      transaction.objectStore(DRAFT_STORE_NAME).put({
+        key: NEW_BOOK_DRAFT_KEY,
+        ...draft,
+        savedAt: new Date().toISOString(),
+      });
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error || new Error('Failed to save draft'));
+      transaction.onabort = () => reject(transaction.error || new Error('Draft save was aborted'));
+    });
+  } finally {
+    db.close();
+  }
+}
+
+async function clearNewBookDraft() {
+  const db = await openDraftDb();
+  try {
+    await new Promise((resolve, reject) => {
+      const transaction = db.transaction(DRAFT_STORE_NAME, 'readwrite');
+      transaction.objectStore(DRAFT_STORE_NAME).delete(NEW_BOOK_DRAFT_KEY);
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error || new Error('Failed to clear draft'));
+      transaction.onabort = () => reject(transaction.error || new Error('Draft clear was aborted'));
+    });
+  } finally {
+    db.close();
+  }
+}
+
 /** Downscale to JPEG so huge iPhone photos (and HEIC on Safari) upload
  *  reliably, shrinking further in steps until it's safely under the cap —
  *  one pass isn't always enough for a very detailed high-res original. */
@@ -112,7 +187,8 @@ function acceptedImage(file) {
 
 export default function NewBook() {
   const router = useRouter();
-  const [draftId] = useState(() => crypto.randomUUID());
+  const [draftId, setDraftId] = useState(() => crypto.randomUUID());
+  const [draftReady, setDraftReady] = useState(false);
   const [files, setFiles] = useState([]);
   const [bulk, setBulk] = useState('');
   const [busy, setBusy] = useState('');
@@ -122,6 +198,31 @@ export default function NewBook() {
   const [meta, setMeta] = useState({ title: '', author: '', series: '' });
   const [coverFile, setCoverFile] = useState(null);
   const [identifying, setIdentifying] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadNewBookDraft()
+      .then((draft) => {
+        if (cancelled || !draft) return;
+        if (draft.draftId) setDraftId(draft.draftId);
+        if (draft.book) setBook(draft.book);
+        if (draft.meta) setMeta(draft.meta);
+        if (typeof draft.bulk === 'string') setBulk(draft.bulk);
+        if (draft.book) setNote('저장하지 못했던 책을 자동으로 복구했어요. 내용을 확인한 뒤 다시 저장해주세요.');
+      })
+      .catch((e) => console.warn('draft restore failed', e))
+      .finally(() => { if (!cancelled) setDraftReady(true); });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!draftReady) return undefined;
+    const timer = setTimeout(() => {
+      saveNewBookDraft({ draftId, book, meta, bulk })
+        .catch((e) => console.warn('draft autosave failed', e));
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [draftReady, draftId, book, meta, bulk]);
 
   function addPhotos(fileList) {
     const selected = Array.from(fileList || []);
@@ -399,6 +500,10 @@ export default function NewBook() {
       onProgress: (done, total) => setBusy(`읽어주기 음성 미리 준비 중... (${done}/${total})`),
     });
 
+    // The durable database/Drive save is complete. Only now remove the local
+    // recovery copy so a failed save can always be retried without rescanning.
+    setDraftReady(false);
+    try { await clearNewBookDraft(); } catch (e) { console.warn('draft clear failed', e); }
     setBusy('');
     router.push(`/book/${data.id}`);
   }
@@ -423,6 +528,9 @@ export default function NewBook() {
 
         {error && <div className="banner">{error}</div>}
         {note && <div className="banner info">{note}</div>}
+        <p className="hint" style={{ margin: '0 0 12px' }}>
+          이 책은 저장이 끝날 때까지 이 브라우저에 자동 임시저장됩니다.
+        </p>
         <label className="label">책 제목</label>
         <input
           className="field en"
