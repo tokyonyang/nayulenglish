@@ -161,11 +161,12 @@ export default function NewBook() {
             : '책에 인쇄된 페이지 번호를 읽어서 순서를 자동 정렬했어요. 확인해보시고 다르면 ▲▼로 조정해주세요.'
           : '페이지 번호를 충분히 찾지 못해 업로드하신 순서를 그대로 사용했어요. 순서가 다르면 ▲▼로 조정해주세요.'
       );
+      const characterVoices = await assignCharacterVoices({}, enr?.characters);
       setBook({
         title: enr?.title || 'My Picture Book',
         themes: enr?.themes || '',
         overallVocab: Array.isArray(enr?.overallVocab) ? enr.overallVocab : [],
-        characterVoices: assignCharacterVoices({}, enr?.characters),
+        characterVoices,
         spreads: merge(base, enr),
       });
     } catch (e) {
@@ -187,11 +188,12 @@ export default function NewBook() {
     setBusy('책을 정리하고 있어요...');
     try {
       const enr = await enrich(base);
+      const characterVoices = await assignCharacterVoices({}, enr?.characters);
       setBook({
         title: enr?.title || 'My Picture Book',
         themes: enr?.themes || '',
         overallVocab: Array.isArray(enr?.overallVocab) ? enr.overallVocab : [],
-        characterVoices: assignCharacterVoices({}, enr?.characters),
+        characterVoices,
         spreads: merge(base, enr),
       });
     } catch (e) {
@@ -207,12 +209,13 @@ export default function NewBook() {
     setError('');
     try {
       const enr = await enrich(book.spreads);
+      const characterVoices = await assignCharacterVoices(book.characterVoices, enr?.characters);
       setBook((b) => ({
         ...b,
         title: enr?.title || b.title,
         themes: enr?.themes || b.themes,
         overallVocab: Array.isArray(enr?.overallVocab) ? enr.overallVocab : b.overallVocab,
-        characterVoices: assignCharacterVoices(b.characterVoices, enr?.characters),
+        characterVoices,
         spreads: merge(b.spreads, enr),
       }));
     } catch (e) {
