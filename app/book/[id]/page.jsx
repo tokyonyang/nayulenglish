@@ -8,7 +8,7 @@ import { DAY_THEMES, stage2Instructions, stage3Instructions } from '@/lib/prompt
 import {
   speakLines, stopSpeaking, spreadLines, chatLines, TTS_VOICES, precacheSpreads, checkCacheStatus,
   recordingSupported, startRecording, stopRecordingAndTranscribe, stopRecordingAsWav,
-  listenUntilSilence, forceStopListening, cancelListening,
+  listenUntilSilence, forceStopListening, cancelListening, primeAudio,
   spreadPhotoUrl, spreadPhotoFallbackUrl, backupBookToDrive,
 } from '@/lib/audio';
 import {
@@ -349,6 +349,7 @@ export default function Session() {
   }
 
   async function startStage(n) {
+    primeAudio(); // fire from this real tap so iOS lets the listening context latch on
     stopSpeaking();
     const st = emptyStage();
     st.startedAt = Date.now();
@@ -385,6 +386,7 @@ export default function Session() {
   }
 
   async function toggleMic(lang) {
+    primeAudio(); // a direct tap — good moment for iOS to let the listening context latch on
     if (lang === 'en' && listening) {
       // Already auto-listening — a tap means "I'm done, send it now"
       // instead of waiting for silence to be detected on its own.
