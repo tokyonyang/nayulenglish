@@ -17,9 +17,12 @@ import {
 
 const emptyStage = () => ({ turns: [], log: [], startedAt: 0, endedAt: 0 });
 
-// From every previous day's saved transcript for this book, pull out the
-// assistant's question-bearing lines so today's conversation can be told
-// not to repeat them. Deduped, capped so the prompt stays small.
+// From every previous day's saved transcript for this book, pull out every
+// distinct line the AI has already said — not just questions, since a
+// repeated OPENING comment ("That was fun! Let's look at that page
+// again.") was slipping through a question-only filter — so today's
+// conversation can be told not to repeat any of them. Deduped, capped so
+// the prompt stays small.
 function extractPriorQuestions(reports) {
   const seen = new Set();
   const qs = [];
@@ -27,7 +30,7 @@ function extractPriorQuestions(reports) {
     for (const turn of r.transcript || []) {
       if (turn.role !== 'assistant') continue;
       const text = String(turn.content || '').trim();
-      if (!text || !text.includes('?')) continue;
+      if (!text) continue;
       const key = text.toLowerCase();
       if (seen.has(key)) continue;
       seen.add(key);
@@ -335,7 +338,7 @@ export default function Session() {
         childText,
       });
 
-      setMessages((m) => [...m, { role: 'assistant', text: speak }]);
+      setMessages((m) => [...m, { role: 'assistant', text: speak, sceneRef: typeof d.sceneRef === 'number' ? d.sceneRef : null }]);
       if (d.wantsWrapUp) setWrapUp(true);
     } catch (e) {
       setMessages((m) => [...m, { role: 'system', text: `문제가 생겼어요: ${String(e.message || e).slice(0, 120)}` }]);
@@ -711,7 +714,23 @@ export default function Session() {
         {stageNum === 2 && <p className="hint">오늘의 주제 · Day {day} “{theme.label}”</p>}
 
         <div className="transcript">
-          {messages.map((m, i) => <div className={`bubble ${m.role}`} key={i}>{m.text}</div>)}
+          {messages.map((m, i) => {
+            const showScene = m.role === 'assistant' && stageNum === 2 && m.sceneRef;
+            const photoUrl = showScene ? spreadPhotoUrl(book.id, m.sceneRef) : null;
+            return (
+              <div key={i}>
+                {photoUrl && (
+                  <img
+                    src={photoUrl}
+                    alt=""
+                    style={{ maxWidth: '55%', display: 'block', borderRadius: 12, margin: '10px 0 4px' }}
+                    onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                  />
+                )}
+                <div className={`bubble ${m.role}`}>{m.text}</div>
+              </div>
+            );
+          })}
           {thinking && <div className="bubble system">🤔 생각하고 있어요...</div>}
           {speaking && <div className="bubble system">🔊 말하는 중...</div>}
           <div ref={bottom} />
