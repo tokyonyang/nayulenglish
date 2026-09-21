@@ -57,9 +57,31 @@ export default function EditBook() {
     }
   }
 
+  function updateDialogue(i, updater) {
+    const next = [...book.spreads];
+    const s = next[i];
+    const current = Array.isArray(s.dialogue) && s.dialogue.length ? s.dialogue : [{ speaker: 'Narrator', text: s.englishText }];
+    next[i] = { ...s, dialogue: updater([...current.map((d) => ({ ...d }))]) };
+    setBook({ ...book, spreads: next });
+  }
+
+  const knownCharacters = book ? Object.keys(book.characterVoices || {}) : [];
+
   async function save() {
     setBusy('저장하고 있어요...');
     setError('');
+
+    // Pick up any character name typed by hand in the dialogue editor that
+    // isn't already voiced — same global voice table re-enrichment uses,
+    // so a manually-added speaker gets a consistent voice too.
+    const allSpeakers = new Set();
+    for (const s of book.spreads) {
+      for (const d of s.dialogue || []) {
+        if (d.speaker && d.speaker !== 'Narrator') allSpeakers.add(d.speaker);
+      }
+    }
+    const characterVoices = await assignCharacterVoices(book.characterVoices, [...allSpeakers]);
+
     const { error } = await supabase
       .from('books')
       .update({
@@ -68,11 +90,12 @@ export default function EditBook() {
         series: book.series || '',
         themes: book.themes,
         overall_vocab: book.overallVocab,
-        character_voices: book.characterVoices || {},
+        character_voices: characterVoices,
         spreads: book.spreads,
       })
       .eq('id', id);
     if (error) { setBusy(''); setError(error.message); return; }
+    setBook((b) => ({ ...b, characterVoices }));
 
     // Only changed lines actually regenerate — anything already cached
     // (unedited pages) is skipped, so this stays quick on small edits.
@@ -80,7 +103,7 @@ export default function EditBook() {
     await precacheSpreads(book.spreads, {
       bookId: id,
       voice,
-      characterVoices: book.characterVoices || {},
+      characterVoices,
       onProgress: (done, total) => setBusy(`읽어주기 음성 준비 중... (${done}/${total})`),
     });
 
@@ -173,9 +196,49 @@ export default function EditBook() {
             />
             {s.sceneDescription && <div className="spread-scene">{s.sceneDescription}</div>}
             {s.voiceDirection && <div className="spread-scene">🔊 {s.voiceDirection}</div>}
+
+            <label className="label" style={{ marginTop: 8, fontSize: 12.5 }}>
+              대사 화자 지정 — AI가 잘못 구분했으면 직접 고쳐주세요
+            </label>
+            {(Array.isArray(s.dialogue) && s.dialogue.length ? s.dialogue : [{ speaker: 'Narrator', text: s.englishText }]).map((d, di) => (
+              <div className="row" style={{ gap: 6, marginTop: 4, alignItems: 'center' }} key={di}>
+                <input
+                  className="field en"
+                  style={{ flex: '0 0 110px', fontSize: 13 }}
+                  list="character-names"
+                  value={d.speaker}
+                  onChange={(e) => updateDialogue(i, (arr) => { arr[di] = { ...arr[di], speaker: e.target.value }; return arr; })}
+                />
+                <input
+                  className="field en"
+                  style={{ flex: 1, fontSize: 13 }}
+                  value={d.text}
+                  onChange={(e) => updateDialogue(i, (arr) => { arr[di] = { ...arr[di], text: e.target.value }; return arr; })}
+                />
+                <button
+                  className="btn-icon"
+                  style={{ flexShrink: 0 }}
+                  onClick={() => updateDialogue(i, (arr) => arr.filter((_, idx) => idx !== di))}
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+            <button
+              className="btn-text"
+              style={{ marginTop: 4 }}
+              onClick={() => updateDialogue(i, (arr) => [...arr, { speaker: 'Narrator', text: '' }])}
+            >
+              + 대사 구간 추가
+            </button>
           </div>
         </div>
       ))}
+
+      <datalist id="character-names">
+        <option value="Narrator" />
+        {knownCharacters.map((c) => <option key={c} value={c} />)}
+      </datalist>
 
       <button
         className="btn-ghost"
