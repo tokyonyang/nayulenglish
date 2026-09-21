@@ -31,7 +31,7 @@ export async function POST(req) {
               ],
             },
           ],
-          maxTokens: 700,
+          maxTokens: 900,
           temperature: 0.2,
         }));
         spreads.push({
@@ -40,6 +40,11 @@ export async function POST(req) {
           sceneDescription: String(data?.sceneDescription || ''),
           textUncertain: Boolean(data?.textUncertain),
           detectedPage: Number.isFinite(Number(data?.printedPageNumber)) ? Number(data.printedPageNumber) : null,
+          speakerSegments: Array.isArray(data?.speakerSegments)
+            ? data.speakerSegments
+                .map((s) => ({ speaker: String(s?.speaker || 'Narrator'), text: String(s?.text || '') }))
+                .filter((s) => s.text)
+            : [],
           error: null,
         });
       } catch (e) {
