@@ -10,6 +10,14 @@ export const maxDuration = 30;
 // token + baking the session's behavior in server-side (instructions,
 // voice, transcription) so a person poking at the browser network tab
 // can't rewrite what the model is told to do.
+// Realtime voice-to-voice models support a DIFFERENT, smaller set of
+// voices than the regular TTS API our other voice picker uses — fable,
+// juniper, onyx and nova all exist there but aren't valid here, and
+// would fail the session with a 400. Map anything outside this set to a
+// safe fallback rather than passing the parent's regular pick through
+// unchecked.
+const REALTIME_VOICES = ['alloy', 'ash', 'ballad', 'coral', 'echo', 'sage', 'shimmer', 'verse', 'marin', 'cedar'];
+
 export async function POST(req) {
   try {
     const { instructions, voice } = await req.json();
@@ -20,6 +28,7 @@ export async function POST(req) {
     if (!key) {
       return NextResponse.json({ error: 'OPENAI_API_KEY 가 설정되지 않았습니다.' }, { status: 500 });
     }
+    const realtimeVoice = REALTIME_VOICES.includes(voice) ? voice : 'coral';
 
     const res = await fetch('https://api.openai.com/v1/realtime/client_secrets', {
       method: 'POST',
@@ -31,7 +40,7 @@ export async function POST(req) {
           instructions,
           audio: {
             input: { transcription: { model: 'whisper-1' } },
-            output: { voice: voice || 'coral' },
+            output: { voice: realtimeVoice },
           },
         },
       }),
