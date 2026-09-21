@@ -749,7 +749,20 @@ export default function Session() {
             ) : null;
           })()}
           <div className="stage-num">펼침면 {cur.number} / {book.spreads.length}</div>
-          <div className="stage-text">{cur.englishText || '(텍스트 없음)'}</div>
+          <div className="stage-text">
+            {Array.isArray(cur.dialogue) && cur.dialogue.length ? (
+              cur.dialogue.map((d, i) => (
+                <div key={i} style={{ marginBottom: 6 }}>
+                  {d.speaker && d.speaker !== 'Narrator' && (
+                    <span style={{ fontWeight: 700, color: 'var(--accent)', marginRight: 6 }}>{d.speaker}:</span>
+                  )}
+                  <span>{d.text}</span>
+                </div>
+              ))
+            ) : (
+              cur.englishText || '(텍스트 없음)'
+            )}
+          </div>
           {cur.sceneDescription && <div className="spread-scene">{cur.sceneDescription}</div>}
         </div>
 
