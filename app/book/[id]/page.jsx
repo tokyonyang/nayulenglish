@@ -827,7 +827,7 @@ export default function Session() {
                   <img
                     src={photoUrl}
                     alt=""
-                    style={{ maxWidth: '55%', display: 'block', borderRadius: 12, margin: '10px 0 4px' }}
+                    style={{ maxWidth: '85%', display: 'block', borderRadius: 12, margin: '10px 0 4px' }}
                     onError={(e) => { e.currentTarget.style.display = 'none'; }}
                   />
                 )}
@@ -859,7 +859,7 @@ export default function Session() {
                 <img
                   src={photoUrl}
                   alt=""
-                  style={{ maxWidth: '55%', display: 'block', margin: '0 auto 10px', borderRadius: 12 }}
+                  style={{ maxWidth: '85%', display: 'block', margin: '0 auto 10px', borderRadius: 12 }}
                   onError={(e) => { e.currentTarget.style.display = 'none'; }}
                 />
               ) : null;
