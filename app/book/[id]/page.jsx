@@ -295,9 +295,17 @@ export default function Session() {
     const s = book.spreads[i];
     if (!s) return;
     setReading(true);
-    await speakLines(spreadLines(s, book.character_voices || {}), {
-      slow, muted, cacheable: true, voice, bookId: book.id,
-    });
+    const lines = spreadLines(s, book.character_voices || {});
+    const hasContent = lines.some((l) => l.text && l.text.trim());
+    if (!hasContent) {
+      // No text on this page at all — hold a beat of silence instead of
+      // instantly skipping, so there's still time to look at the picture.
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    } else {
+      await speakLines(lines, {
+        slow, muted, cacheable: true, voice, bookId: book.id,
+      });
+    }
     setReading(false);
   }
 
