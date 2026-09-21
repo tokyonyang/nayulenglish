@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase, supabaseReady } from '@/lib/supabase';
-import { DAY_THEMES, stage2Instructions, stage3Instructions } from '@/lib/prompts';
+import { DAY_THEMES, stage2Instructions, stage3Instructions, stage2LiveInstructions, stage3LiveInstructions } from '@/lib/prompts';
 import {
   speakLines, stopSpeaking, spreadLines, chatLines, TTS_VOICES, precacheSpreads, checkCacheStatus,
   recordingSupported, startRecording, stopRecordingAndTranscribe, stopRecordingAsWav,
@@ -392,7 +392,11 @@ export default function Session() {
   }, [slow, muted, voice]);
 
   function instructionsFor(n) {
-    if (n === 2) return stage2Instructions(book, day, priorQuestionsRef.current);
+    if (n === 2) {
+      return liveMode
+        ? stage2LiveInstructions(book, day, priorQuestionsRef.current)
+        : stage2Instructions(book, day, priorQuestionsRef.current);
+    }
     const log2 = stage.current[2].log;
     let bridge = null;
     for (let i = log2.length - 1; i >= 0; i--) {
@@ -401,7 +405,9 @@ export default function Session() {
         break;
       }
     }
-    return stage3Instructions(book, day, bridge, priorQuestionsRef.current);
+    return liveMode
+      ? stage3LiveInstructions(book, day, bridge, priorQuestionsRef.current)
+      : stage3Instructions(book, day, bridge, priorQuestionsRef.current);
   }
 
   async function startStage(n) {
