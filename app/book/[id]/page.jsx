@@ -14,6 +14,7 @@ import {
 import {
   tally, bestLevelLabel, pairStats, transcriptSummary, truncateMiddle, todayStr,
 } from '@/lib/report';
+import { startLiveSession, extractHistoryText } from '@/lib/liveChat';
 
 const emptyStage = () => ({ turns: [], log: [], startedAt: 0, endedAt: 0 });
 
@@ -202,7 +203,37 @@ export default function Session() {
   const pauseStartRef = useRef(0);
   useEffect(() => { pausedRef.current = paused; }, [paused]);
 
+  // Live (Realtime API) mode — an alternative to the turn-based mic flow.
+  // Chosen once before a stage starts; the session itself lives outside
+  // React state in a ref since it's an imperative WebRTC connection, not
+  // render-driven data.
+  const [liveMode, setLiveMode] = useState(false);
+  const [liveStatus, setLiveStatus] = useState(''); // '' | 'connecting' | 'live'
+  const [liveSceneRef, setLiveSceneRef] = useState(null);
+  const liveSessionRef = useRef(null);
+
+  function disconnectLive() {
+    if (liveSessionRef.current) {
+      try { liveSessionRef.current.close?.(); } catch (e) { console.error('live session close failed', e); }
+      liveSessionRef.current = null;
+    }
+    setLiveStatus('');
+    setLiveSceneRef(null);
+  }
+
   function togglePause() {
+    if (liveMode) {
+      const next = !paused;
+      try { liveSessionRef.current?.mute?.(next); } catch (e) { console.error('live mute failed', e); }
+      if (next) pauseStartRef.current = Date.now();
+      else {
+        const pausedMs = Date.now() - pauseStartRef.current;
+        const st = stage.current[stageNum];
+        if (st.startedAt) st.startedAt += pausedMs;
+      }
+      setPaused(next);
+      return;
+    }
     if (paused) {
       // Resume — shift this stage's start time forward by however long we
       // were paused, so the session-duration stats in the final report
@@ -383,7 +414,48 @@ export default function Session() {
     setMessages([]);
     setWrapUp(false);
     setElapsed(0);
+    setPaused(false);
     setScreen('chat');
+
+    if (liveMode) {
+      setLiveStatus('connecting');
+      try {
+        const session = await startLiveSession({
+          instructions: instructionsFor(n),
+          voice,
+          onHistory: (history) => {
+            const items = history
+              .filter((it) => it.type === 'message' && (it.role === 'user' || it.role === 'assistant') && it.status === 'completed')
+              .map((it) => ({ role: it.role, text: extractHistoryText(it) }))
+              .filter((b) => b.text);
+            // Keep turns in the same shape the turn-based mode uses, so
+            // the report's qualitative summary and next-day repeat-avoidance
+            // both work identically regardless of which mode a day used.
+            stage.current[n].turns = [
+              { role: 'user', content: '(시작해주세요)' },
+              ...items.map((b) => ({ role: b.role, content: b.text })),
+            ];
+            setMessages(items.map((b) => ({ role: b.role === 'user' ? 'child' : 'assistant', text: b.text })));
+          },
+          onLog: (entry) => {
+            stage.current[n].log.push(entry);
+            if (entry.sceneRef != null) setLiveSceneRef(entry.sceneRef);
+          },
+          onWrapUp: () => setWrapUp(true),
+          onError: (e) => {
+            console.error('live session error', e);
+            setMessages((m) => [...m, { role: 'system', text: '라이브 연결에 문제가 생겼어요.' }]);
+          },
+        });
+        liveSessionRef.current = session;
+        setLiveStatus('live');
+      } catch (e) {
+        setLiveStatus('');
+        setMessages((m) => [...m, { role: 'system', text: `라이브 모드 연결 실패: ${String(e.message || e).slice(0, 150)}` }]);
+      }
+      return;
+    }
+
     await askClaude(n, instructionsFor(n), [{ role: 'user', content: '(시작해주세요)' }], {});
   }
 
@@ -483,6 +555,7 @@ export default function Session() {
 
   /* ---------- report ---------- */
   async function finish() {
+    disconnectLive();
     stopSpeaking();
     stage.current[stageNum].endedAt = Date.now();
     setScreen('generating');
@@ -690,7 +763,11 @@ export default function Session() {
           </button>
         </div>
 
-        <button className="btn" style={{ marginTop: 14 }} onClick={() => startStage(2)}>이야기 시작하기 →</button>
+        <label className="row" style={{ alignItems: 'center', gap: 8, marginTop: 10, cursor: 'pointer' }}>
+          <input type="checkbox" checked={liveMode} onChange={(e) => setLiveMode(e.target.checked)} />
+          <span className="hint" style={{ margin: 0 }}>🎙️ 라이브 모드로 대화하기 (실시간 음성, 실험적 기능)</span>
+        </label>
+        <button className="btn" style={{ marginTop: 10 }} onClick={() => startStage(2)}>이야기 시작하기 →</button>
       </>
     );
   }
@@ -700,7 +777,7 @@ export default function Session() {
     return (
       <>
         <div className="topbar">
-          <Link href="/"><button className="btn-icon" onClick={() => { if (listening) cancelListening(); stopSpeaking(); }}>←</button></Link>
+          <Link href="/"><button className="btn-icon" onClick={() => { disconnectLive(); if (listening) cancelListening(); stopSpeaking(); }}>←</button></Link>
           <span className="title">{stageNum === 2 ? '📖 책 이야기' : '🌞 오늘 이야기'}</span>
           <div className="hgroup">
             <button className="btn-icon" onClick={togglePause}>{paused ? '▶' : '⏸'}</button>
@@ -743,43 +820,68 @@ export default function Session() {
         )}
         {wrapUp && <div className="banner info">슬슬 마무리할 시간이에요 🌙</div>}
 
-        {listening && (
-          <div className="banner info" style={{ textAlign: 'center' }}>
-            🎤 듣고 있어요... <span style={{ opacity: 0.4 + micLevel * 0.6 }}>●</span>
-          </div>
-        )}
+        {liveMode ? (
+          <>
+            {liveStatus === 'connecting' && <div className="banner info" style={{ textAlign: 'center' }}>🎙️ 라이브로 연결하고 있어요...</div>}
+            {liveStatus === 'live' && !paused && (
+              <div className="banner info" style={{ textAlign: 'center' }}>🔴 라이브 대화 중 — 편하게 말을 걸어보세요</div>
+            )}
+            {stageNum === 2 && liveSceneRef && (() => {
+              const photoUrl = spreadPhotoUrl(book.id, liveSceneRef);
+              return photoUrl ? (
+                <img
+                  src={photoUrl}
+                  alt=""
+                  style={{ maxWidth: '55%', display: 'block', margin: '0 auto 10px', borderRadius: 12 }}
+                  onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                />
+              ) : null;
+            })()}
+            <button className="btn-ghost" onClick={togglePause} style={{ marginBottom: 8 }} disabled={liveStatus !== 'live'}>
+              {paused ? '▶ 계속하기' : '⏸ 일시정지'}
+            </button>
+          </>
+        ) : (
+          <>
+            {listening && (
+              <div className="banner info" style={{ textAlign: 'center' }}>
+                🎤 듣고 있어요... <span style={{ opacity: 0.4 + micLevel * 0.6 }}>●</span>
+              </div>
+            )}
 
-        <button className="btn-ghost" onClick={togglePause} style={{ marginBottom: 8 }}>
-          {paused ? '▶ 계속하기' : '⏸ 일시정지'}
-        </button>
+            <button className="btn-ghost" onClick={togglePause} style={{ marginBottom: 8 }}>
+              {paused ? '▶ 계속하기' : '⏸ 일시정지'}
+            </button>
 
-        <div className="inputbar">
-          {recordingSupported() && (
-            <>
-              <button
-                className={`mic ${recording || listening ? 'rec' : ''}`}
-                onClick={() => toggleMic('en')}
+            <div className="inputbar">
+              {recordingSupported() && (
+                <>
+                  <button
+                    className={`mic ${recording || listening ? 'rec' : ''}`}
+                    onClick={() => toggleMic('en')}
+                    disabled={thinking || speaking || paused}
+                  >
+                    {recording || listening ? '■' : '🎤EN'}
+                  </button>
+                  <button className="mic" onClick={() => toggleMic('ko')} disabled={thinking || speaking || paused}>🎤KO</button>
+                </>
+              )}
+              <input
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') send(); }}
+                placeholder="나율이가 말한 내용을 입력해요"
                 disabled={thinking || speaking || paused}
-              >
-                {recording || listening ? '■' : '🎤EN'}
-              </button>
-              <button className="mic" onClick={() => toggleMic('ko')} disabled={thinking || speaking || paused}>🎤KO</button>
-            </>
-          )}
-          <input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') send(); }}
-            placeholder="나율이가 말한 내용을 입력해요"
-            disabled={thinking || speaking || paused}
-          />
-          <button className="send" onClick={() => send()} disabled={thinking || speaking || paused}>보내기</button>
-        </div>
+              />
+              <button className="send" onClick={() => send()} disabled={thinking || speaking || paused}>보내기</button>
+            </div>
+          </>
+        )}
 
         <div className="row" style={{ marginTop: 10 }}>
           <button
             className="btn-ghost"
-            disabled={thinking || speaking || paused}
+            disabled={liveMode || thinking || speaking || paused}
             onClick={() => {
               const last = [...messages].reverse().find((m) => m.role === 'assistant');
               if (!last) return;
@@ -795,7 +897,7 @@ export default function Session() {
             <button
               className="btn"
               disabled={thinking || speaking || paused}
-              onClick={() => { if (listening) cancelListening(); stage.current[2].endedAt = Date.now(); startStage(3); }}
+              onClick={() => { disconnectLive(); if (listening) cancelListening(); stage.current[2].endedAt = Date.now(); startStage(3); }}
             >
               다음: 오늘 이야기 →
             </button>
@@ -803,7 +905,7 @@ export default function Session() {
             <button
               className="btn"
               disabled={thinking || speaking || paused}
-              onClick={() => { if (listening) cancelListening(); finish(); }}
+              onClick={() => { disconnectLive(); if (listening) cancelListening(); finish(); }}
             >
               세션 마무리 →
             </button>
