@@ -31,7 +31,7 @@ export async function POST(req) {
               ],
             },
           ],
-          maxTokens: 900,
+          maxTokens: 1100,
           temperature: 0.2,
         }));
         spreads.push({
