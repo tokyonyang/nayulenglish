@@ -262,10 +262,28 @@ export default function Session() {
       if (!supabaseReady) { setError('Supabase 환경변수가 설정되지 않았습니다.'); setScreen('error'); return; }
       const { data: b, error: e1 } = await supabase.from('books').select('*').eq('id', id).single();
       if (e1 || !b) { setError(e1?.message || '책을 찾지 못했어요.'); setScreen('error'); return; }
-      const { data: reports } = await supabase.from('reports').select('date, transcript').eq('book_id', id);
+      const { data: reports } = await supabase
+        .from('reports')
+        .select('date, transcript, day, word_spont, phrase_spont, sent_spont, hint_sent, model_sent')
+        .eq('book_id', id);
       const dates = new Set((reports || []).map((r) => r.date));
       const priorDays = dates.has(todayStr()) ? dates.size - 1 : dates.size;
-      setDay(Math.min(Math.max(priorDays + 1, 1), 7));
+      let nextDay = Math.min(Math.max(priorDays + 1, 1), 7);
+
+      // Not a fixed, exam-style schedule — if the most recent session needed
+      // heavy scaffolding (hints/modeled sentences) far more than she
+      // answered on her own, repeat that same day's theme instead of
+      // mechanically advancing, so the level actually follows her, not the
+      // calendar.
+      const lastReport = [...(reports || [])].sort((a, b) => (a.date < b.date ? 1 : -1))[0];
+      if (lastReport && Number(lastReport.day) < 7) {
+        const spont = (lastReport.word_spont || 0) + (lastReport.phrase_spont || 0) + (lastReport.sent_spont || 0);
+        const struggled = (lastReport.hint_sent || 0) + (lastReport.model_sent || 0);
+        const total = spont + struggled;
+        if (total >= 3 && struggled / total > 0.6) nextDay = Number(lastReport.day);
+      }
+
+      setDay(nextDay);
       priorQuestionsRef.current = extractPriorQuestions(reports);
       setBook(b);
       setScreen('stage1');
