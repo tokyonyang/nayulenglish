@@ -39,7 +39,17 @@ export async function POST(req) {
           model: 'gpt-realtime-mini',
           instructions,
           audio: {
-            input: { transcription: { model: 'whisper-1' } },
+            input: {
+              transcription: { model: 'whisper-1' },
+              // Realtime's own default (server_vad, 500ms of silence = "she's
+              // done") is far too quick for a 4-year-old who pauses mid-
+              // thought — that's exactly why live mode felt rushed and kept
+              // jumping in. semantic_vad with low eagerness judges from what
+              // she's actually said whether she sounds finished or just
+              // trailing off, and waits longer in the latter case, instead
+              // of a single fixed timer.
+              turn_detection: { type: 'semantic_vad', eagerness: 'low', create_response: true, interrupt_response: true },
+            },
             output: { voice: realtimeVoice },
           },
         },
