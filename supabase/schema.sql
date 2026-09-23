@@ -155,3 +155,10 @@ create policy "character_voices all access" on character_voices for all using (t
 -- 참고하게 합니다.
 alter table books add column if not exists author text default '';
 alter table books add column if not exists series text default '';
+
+-- ── Book Map — 책 전체를 한 번에 분석한 요약 ──────────────────────────────
+-- 줄거리 순서, 원인과 결과, 웃긴/흥미로운 장면, 실생활 연결 아이디어 등을
+-- 담은 책 단위 요약. 페이지별 원인·결과(causeEffect)/실생활 연결 힌트
+-- (lifeConnectionHint)는 spreads JSONB 안에 필드로 들어가므로 컬럼이 따로
+-- 필요 없습니다.
+alter table books add column if not exists book_map text default '';
