@@ -26,6 +26,7 @@ export default function EditBook() {
         author: data.author || '',
         series: data.series || '',
         themes: data.themes || '',
+        bookMap: data.book_map || '',
         overallVocab: data.overall_vocab || [],
         characterVoices: data.character_voices || {},
         spreads: (data.spreads || []).map((s, i) => ({ ...blankSpread(s.number ?? i + 1), ...s })),
@@ -45,6 +46,7 @@ export default function EditBook() {
         ...b,
         title: b.title || enr?.title || b.title,
         themes: enr?.themes || b.themes,
+        bookMap: enr?.bookMap || b.bookMap || '',
         overallVocab: Array.isArray(enr?.overallVocab) ? enr.overallVocab : b.overallVocab,
         characterVoices,
         spreads: mergeEnrichment(b.spreads, enr),
@@ -89,6 +91,7 @@ export default function EditBook() {
         author: book.author || '',
         series: book.series || '',
         themes: book.themes,
+        book_map: book.bookMap || '',
         overall_vocab: book.overallVocab,
         character_voices: characterVoices,
         spreads: book.spreads,
@@ -173,6 +176,11 @@ export default function EditBook() {
         저자·시리즈를 채우고 "다시 정리하기"를 누르면, AI가 아는 책이면 그 배경지식을 실감나게 반영합니다.
       </p>
       {book.themes && <p className="hint">{book.themes}</p>}
+      {book.bookMap && (
+        <div className="banner info" style={{ marginTop: 8, whiteSpace: 'pre-wrap' }}>
+          <strong>📖 Book Map</strong><br />{book.bookMap}
+        </div>
+      )}
       {book.characterVoices && Object.keys(book.characterVoices).length > 0 && (
         <p className="hint">
           🎭 등장인물 목소리: {Object.entries(book.characterVoices).map(([name, v]) => `${name}(${v})`).join(', ')}
