@@ -16,7 +16,9 @@ export async function POST(req) {
       // Scale with page count — voiceDirection + per-speaker dialogue
       // segments make each spread's output noticeably longer, so a fixed
       // cap was truncating big books.
-      maxTokens: Math.min(16000, 1500 + spreads.length * 380),
+      // Bumped per-spread budget: three new fields (causeEffect, expansionPhrase,
+      // lifeConnectionHint) plus the book-level bookMap summary add real output length.
+      maxTokens: Math.min(16000, 2000 + spreads.length * 480),
       temperature: 0.6,
     }));
     return NextResponse.json(data);
