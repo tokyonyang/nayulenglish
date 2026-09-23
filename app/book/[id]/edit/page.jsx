@@ -78,6 +78,42 @@ export default function EditBook() {
 
   const knownCharacters = book ? Object.keys(book.characterVoices || {}) : [];
 
+  // How often has the same question actually come up across every past
+  // session of this book? Grouped by exact text (case/spacing-normalized)
+  // — a good, honest first pass; near-paraphrases won't group together,
+  // but a literal repeat (the most telling sign of a stuck pattern) will.
+  const [qFreq, setQFreq] = useState(null);
+  const [qFreqLoading, setQFreqLoading] = useState(false);
+  async function checkQuestionFrequency() {
+    setQFreqLoading(true);
+    setQFreq(null);
+    try {
+      const { data: reports, error } = await supabase.from('reports').select('date, transcript').eq('book_id', id);
+      if (error) throw error;
+      const counts = new Map(); // normalized key -> { text, count, dates: Set }
+      for (const r of reports || []) {
+        for (const turn of r.transcript || []) {
+          if (turn.role !== 'assistant') continue;
+          const text = String(turn.content || '').trim();
+          if (!text) continue;
+          const key = text.toLowerCase().replace(/\s+/g, ' ');
+          if (!counts.has(key)) counts.set(key, { text, count: 0, dates: new Set() });
+          const entry = counts.get(key);
+          entry.count++;
+          entry.dates.add(r.date);
+        }
+      }
+      const list = [...counts.values()]
+        .map((e) => ({ text: e.text, count: e.count, dates: [...e.dates].sort() }))
+        .sort((a, b) => b.count - a.count);
+      setQFreq(list);
+    } catch (e) {
+      setError(String(e.message || e));
+    } finally {
+      setQFreqLoading(false);
+    }
+  }
+
   async function save() {
     setBusy('저장하고 있어요...');
     setError('');
@@ -278,6 +314,29 @@ export default function EditBook() {
         ＋ 펼침면 추가
       </button>
       <button className="btn-ghost" onClick={reEnrich}>✨ 입력한 문장으로 다시 정리하기</button>
+
+      <button className="btn-ghost" onClick={checkQuestionFrequency} disabled={qFreqLoading}>
+        {qFreqLoading ? '확인 중...' : '📊 질문 반복 빈도 확인'}
+      </button>
+      {qFreq && (
+        qFreq.length === 0 ? (
+          <p className="hint">아직 대화 기록이 없어요.</p>
+        ) : (
+          <div className="vocab-list">
+            {qFreq.map((q, i) => (
+              <div className="vocab-word" key={i}>
+                <div className="vocab-word-head">
+                  <span style={{ fontWeight: 700 }}>{q.count}회</span>
+                  {q.count >= 2 && <span style={{ color: 'var(--rose)', fontSize: 12 }}>⚠ 반복됨</span>}
+                </div>
+                <div className="en" style={{ fontSize: 14, marginTop: 2 }}>{q.text}</div>
+                <div className="vocab-def">{q.dates.join(', ')}</div>
+              </div>
+            ))}
+          </div>
+        )
+      )}
+
       <button className="btn" style={{ marginTop: 14 }} onClick={save}>저장하기</button>
     </>
   );
