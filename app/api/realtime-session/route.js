@@ -48,7 +48,15 @@ export async function POST(req) {
               // she's actually said whether she sounds finished or just
               // trailing off, and waits longer in the latter case, instead
               // of a single fixed timer.
-              turn_detection: { type: 'semantic_vad', eagerness: 'low', create_response: true, interrupt_response: true },
+              // semantic_vad had no volume-threshold control, so quiet
+              // background noise was starting a "turn" on its own — Whisper
+              // then hallucinates plausible-sounding phrases from near-
+              // silence, and the model replies to those as if she'd spoken.
+              // server_vad exposes an explicit loudness threshold: raised
+              // here so only clearly-intentional speech starts a turn, with
+              // a generous silence window so it still doesn't cut her off
+              // mid-thought.
+              turn_detection: { type: 'server_vad', threshold: 0.7, prefix_padding_ms: 300, silence_duration_ms: 2200, create_response: true, interrupt_response: true },
             },
             output: { voice: realtimeVoice },
           },
