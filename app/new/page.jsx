@@ -345,6 +345,7 @@ export default function NewBook() {
         author: meta.author || '',
         series: meta.series || '',
         themes: enr?.themes || '',
+        bookMap: enr?.bookMap || '',
         overallVocab: Array.isArray(enr?.overallVocab) ? enr.overallVocab : [],
         characterVoices,
         spreads: merge(base, enr),
@@ -374,13 +375,14 @@ export default function NewBook() {
         author: meta.author || '',
         series: meta.series || '',
         themes: enr?.themes || '',
+        bookMap: enr?.bookMap || '',
         overallVocab: Array.isArray(enr?.overallVocab) ? enr.overallVocab : [],
         characterVoices,
         spreads: merge(base, enr),
       });
     } catch (e) {
       setError(String(e.message || e));
-      setBook({ title: meta.title || 'My Picture Book', author: meta.author || '', series: meta.series || '', themes: '', overallVocab: [], characterVoices: {}, spreads: base });
+      setBook({ title: meta.title || 'My Picture Book', author: meta.author || '', series: meta.series || '', themes: '', bookMap: '', overallVocab: [], characterVoices: {}, spreads: base });
     } finally {
       setBusy('');
     }
@@ -396,6 +398,7 @@ export default function NewBook() {
         ...b,
         title: b.title || enr?.title || b.title,
         themes: enr?.themes || b.themes,
+        bookMap: enr?.bookMap || b.bookMap || '',
         overallVocab: Array.isArray(enr?.overallVocab) ? enr.overallVocab : b.overallVocab,
         characterVoices,
         spreads: merge(b.spreads, enr),
@@ -461,6 +464,7 @@ export default function NewBook() {
         author: book.author || '',
         series: book.series || '',
         themes: book.themes,
+        book_map: book.bookMap || '',
         overall_vocab: book.overallVocab,
         character_voices: book.characterVoices || {},
         spreads: cleanSpreads,
