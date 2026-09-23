@@ -162,3 +162,8 @@ alter table books add column if not exists series text default '';
 -- (lifeConnectionHint)는 spreads JSONB 안에 필드로 들어가므로 컬럼이 따로
 -- 필요 없습니다.
 alter table books add column if not exists book_map text default '';
+
+-- ── 책 전체 읽기 안내 ─────────────────────────────────────────────
+-- 부모가 책마다 원하는 읽기 방식(속도, 과장, 유머, 함께 이야기하는
+-- 분위기 등)을 한 번 입력하면 Stage 1 음성과 Stage 2 대화에 계속 반영합니다.
+alter table books add column if not exists reading_guidance text not null default '';

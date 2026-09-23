@@ -110,6 +110,7 @@ export default function Session() {
         bookId: book.id,
         voice,
         characterVoices: book.character_voices || {},
+        readingGuidance: book.reading_guidance || '',
         onProgress: (done, total) => setPrecaching(`읽어주기 음성 준비 중... (${done}/${total})`),
       });
     } finally {
@@ -125,6 +126,7 @@ export default function Session() {
       bookId: book.id,
       voice,
       characterVoices: book.character_voices || {},
+      readingGuidance: book.reading_guidance || '',
     });
     setCacheStatus(`${cached} / ${total}줄 캐시됨`);
   }
@@ -144,6 +146,7 @@ export default function Session() {
       bookId: book.id,
       voice,
       characterVoices: book.character_voices || {},
+      readingGuidance: book.reading_guidance || '',
       onProgress: (done, total) => setAutoPrep(done < total ? `🎧 음성 준비 중... (${done}/${total})` : ''),
     }).finally(() => {
       autoPrepBusy.current = false;
@@ -313,7 +316,7 @@ export default function Session() {
     const s = book.spreads[i];
     if (!s) return;
     setReading(true);
-    const lines = spreadLines(s, book.character_voices || {});
+    const lines = spreadLines(s, book.character_voices || {}, book.reading_guidance || '');
     const hasContent = lines.some((l) => l.text && l.text.trim());
     if (!hasContent) {
       // No text on this page at all — hold a beat of silence instead of
@@ -710,6 +713,12 @@ export default function Session() {
           <p className="hint" style={{ margin: '6px 0 0' }}>
             🎭 {Object.entries(book.character_voices).map(([name, v]) => `${name}(${v})`).join(', ')}는 내레이션과 다른 고정 목소리로 나와요.
           </p>
+        )}
+
+        {book.reading_guidance && (
+          <div className="banner info" style={{ marginTop: 8, whiteSpace: 'pre-wrap' }}>
+            <strong>🎬 이 책 읽기 안내</strong><br />{book.reading_guidance}
+          </div>
         )}
 
         {autoPrep && <p className="hint" style={{ margin: '6px 0 0', textAlign: 'center' }}>{autoPrep}</p>}

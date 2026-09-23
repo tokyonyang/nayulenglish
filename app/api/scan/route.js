@@ -48,6 +48,12 @@ export async function POST(req) {
           error: null,
         });
       } catch (e) {
+        // A deployment configuration failure affects every page. Returning it
+        // as a normal per-page OCR miss makes the confirmation screen (and its
+        // IndexedDB draft) keep showing the same misleading photo error even
+        // after the parent retries. Fail the whole request instead so the UI
+        // can explain that Vercel needs attention while preserving the photos.
+        if (e?.code === 'OPENAI_API_KEY_MISSING') throw e;
         console.error('scan spread', num, e);
         spreads.push({
           number: num,

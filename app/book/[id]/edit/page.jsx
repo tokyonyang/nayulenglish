@@ -7,6 +7,14 @@ import { supabase, supabaseReady } from '@/lib/supabase';
 import { blankSpread, enrichSpreads, mergeEnrichment, assignCharacterVoices } from '@/lib/bookEditing';
 import { precacheSpreads } from '@/lib/audio';
 
+function databaseErrorMessage(error) {
+  const message = String(error?.message || error || '저장하지 못했어요.');
+  if (/reading_guidance/i.test(message) && /schema cache|column/i.test(message)) {
+    return 'Supabase에 책 전체 읽기 안내 컬럼이 아직 없습니다. supabase/add_reading_guidance.sql을 실행한 뒤 다시 저장해주세요.';
+  }
+  return message;
+}
+
 export default function EditBook() {
   const { id } = useParams();
   const router = useRouter();
@@ -25,6 +33,7 @@ export default function EditBook() {
         title: data.title,
         author: data.author || '',
         series: data.series || '',
+        readingGuidance: data.reading_guidance || '',
         themes: data.themes || '',
         bookMap: data.book_map || '',
         overallVocab: data.overall_vocab || [],
@@ -40,7 +49,7 @@ export default function EditBook() {
     setError('');
     setNote('');
     try {
-      const enr = await enrichSpreads(book.spreads, { title: book.title, author: book.author, series: book.series });
+      const enr = await enrichSpreads(book.spreads, { title: book.title, author: book.author, series: book.series, readingGuidance: book.readingGuidance });
       const characterVoices = await assignCharacterVoices(book.characterVoices, enr?.characters);
       setBook((b) => ({
         ...b,
@@ -90,6 +99,7 @@ export default function EditBook() {
         title: book.title.trim() || 'Untitled Story',
         author: book.author || '',
         series: book.series || '',
+        reading_guidance: String(book.readingGuidance || '').trim().slice(0, 1200),
         themes: book.themes,
         book_map: book.bookMap || '',
         overall_vocab: book.overallVocab,
@@ -97,7 +107,7 @@ export default function EditBook() {
         spreads: book.spreads,
       })
       .eq('id', id);
-    if (error) { setBusy(''); setError(error.message); return; }
+    if (error) { setBusy(''); setError(databaseErrorMessage(error)); return; }
     setBook((b) => ({ ...b, characterVoices }));
 
     // Only changed lines actually regenerate — anything already cached
@@ -107,6 +117,7 @@ export default function EditBook() {
       bookId: id,
       voice,
       characterVoices,
+      readingGuidance: book.readingGuidance || '',
       onProgress: (done, total) => setBusy(`읽어주기 음성 준비 중... (${done}/${total})`),
     });
 
@@ -172,6 +183,18 @@ export default function EditBook() {
         value={book.series || ''}
         onChange={(e) => setBook({ ...book, series: e.target.value })}
       />
+      <label className="label">책 전체 읽기 안내 (선택)</label>
+      <textarea
+        className="field"
+        rows={3}
+        maxLength={1200}
+        placeholder={'예: 엄마와 함께 읽으면서 같이 이야기해주세요. 웃긴 책이니 목소리 톤을 바꾸고 과장해서 재미있게 읽어주세요.'}
+        value={book.readingGuidance || ''}
+        onChange={(e) => setBook({ ...book, readingGuidance: e.target.value })}
+      />
+      <p className="hint" style={{ margin: '4px 0 14px' }}>
+        수정한 안내는 다시 저장할 때 모든 페이지 음성과 책 이야기 대화에 반영됩니다.
+      </p>
       <p className="hint" style={{ margin: '4px 0 14px' }}>
         저자·시리즈를 채우고 "다시 정리하기"를 누르면, AI가 아는 책이면 그 배경지식을 실감나게 반영합니다.
       </p>

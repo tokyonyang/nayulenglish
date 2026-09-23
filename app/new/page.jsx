@@ -185,6 +185,24 @@ function acceptedImage(file) {
   return type.startsWith('image/') || /\.(jpe?g|png|webp|heic|heif)$/.test(name);
 }
 
+async function apiErrorMessage(response) {
+  const raw = await response.text();
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed?.error || raw || `요청에 실패했어요. (${response.status})`;
+  } catch {
+    return raw || `요청에 실패했어요. (${response.status})`;
+  }
+}
+
+function databaseErrorMessage(error) {
+  const message = String(error?.message || error || '저장하지 못했어요.');
+  if (/reading_guidance/i.test(message) && /schema cache|column/i.test(message)) {
+    return 'Supabase에 책 전체 읽기 안내 컬럼이 아직 없습니다. supabase/add_reading_guidance.sql을 실행한 뒤 다시 저장해주세요.';
+  }
+  return message;
+}
+
 export default function NewBook() {
   const router = useRouter();
   const [draftId, setDraftId] = useState(() => crypto.randomUUID());
@@ -195,9 +213,28 @@ export default function NewBook() {
   const [error, setError] = useState('');
   const [note, setNote] = useState('');
   const [book, setBook] = useState(null);
-  const [meta, setMeta] = useState({ title: '', author: '', series: '' });
+  const [meta, setMeta] = useState({ title: '', author: '', series: '', readingGuidance: '' });
   const [coverFile, setCoverFile] = useState(null);
   const [identifying, setIdentifying] = useState(false);
+  const [deploymentIssue, setDeploymentIssue] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/health', { cache: 'no-store' })
+      .then((res) => res.ok ? res.json() : null)
+      .then((status) => {
+        if (cancelled || !status) return;
+        const issues = [];
+        if (!status.openaiConfigured) issues.push('OPENAI_API_KEY');
+        if (!status.supabasePublicConfigured) issues.push('NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY');
+        if (!status.supabaseServerConfigured) issues.push('SUPABASE_SECRET_KEY');
+        setDeploymentIssue(issues.length
+          ? `현재 배포 서버가 ${issues.join(', ')} 환경변수를 읽지 못하고 있어요. Vercel에서 값을 확인한 뒤 새로 배포해주세요.`
+          : '');
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -206,7 +243,7 @@ export default function NewBook() {
         if (cancelled || !draft) return;
         if (draft.draftId) setDraftId(draft.draftId);
         if (draft.book) setBook(draft.book);
-        if (draft.meta) setMeta(draft.meta);
+        if (draft.meta) setMeta((current) => ({ ...current, ...draft.meta }));
         if (typeof draft.bulk === 'string') setBulk(draft.bulk);
         if (draft.book) setNote('저장하지 못했던 책을 자동으로 복구했어요. 내용을 확인한 뒤 다시 저장해주세요.');
       })
@@ -247,7 +284,7 @@ export default function NewBook() {
       const form = new FormData();
       form.append('cover', converted);
       const res = await fetch('/api/identify-cover', { method: 'POST', body: form });
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) throw new Error(await apiErrorMessage(res));
       const data = await res.json();
       setMeta((m) => ({
         title: data.title || m.title,
@@ -344,6 +381,7 @@ export default function NewBook() {
         title: meta.title || enr?.title || 'My Picture Book',
         author: meta.author || '',
         series: meta.series || '',
+        readingGuidance: meta.readingGuidance || '',
         themes: enr?.themes || '',
         bookMap: enr?.bookMap || '',
         overallVocab: Array.isArray(enr?.overallVocab) ? enr.overallVocab : [],
@@ -374,6 +412,7 @@ export default function NewBook() {
         title: meta.title || enr?.title || 'My Picture Book',
         author: meta.author || '',
         series: meta.series || '',
+        readingGuidance: meta.readingGuidance || '',
         themes: enr?.themes || '',
         bookMap: enr?.bookMap || '',
         overallVocab: Array.isArray(enr?.overallVocab) ? enr.overallVocab : [],
@@ -382,7 +421,7 @@ export default function NewBook() {
       });
     } catch (e) {
       setError(String(e.message || e));
-      setBook({ title: meta.title || 'My Picture Book', author: meta.author || '', series: meta.series || '', themes: '', bookMap: '', overallVocab: [], characterVoices: {}, spreads: base });
+      setBook({ title: meta.title || 'My Picture Book', author: meta.author || '', series: meta.series || '', readingGuidance: meta.readingGuidance || '', themes: '', bookMap: '', overallVocab: [], characterVoices: {}, spreads: base });
     } finally {
       setBusy('');
     }
@@ -392,7 +431,7 @@ export default function NewBook() {
     setBusy('다시 정리하고 있어요...');
     setError('');
     try {
-      const enr = await enrich(book.spreads, { title: book.title, author: book.author, series: book.series });
+      const enr = await enrich(book.spreads, { title: book.title, author: book.author, series: book.series, readingGuidance: book.readingGuidance });
       const characterVoices = await assignCharacterVoices(book.characterVoices, enr?.characters);
       setBook((b) => ({
         ...b,
@@ -425,7 +464,7 @@ export default function NewBook() {
         form.append('photos', s.photo);
         form.append('start', String(s.number));
         const res = await fetch('/api/scan', { method: 'POST', body: form });
-        if (!res.ok) throw new Error(await res.text());
+        if (!res.ok) throw new Error(await apiErrorMessage(res));
         const { spreads: result } = await res.json();
         const r = result[0];
         const idx = updated.findIndex((x) => x.number === s.number);
@@ -463,6 +502,7 @@ export default function NewBook() {
         title: book.title.trim() || 'Untitled Story',
         author: book.author || '',
         series: book.series || '',
+        reading_guidance: String(book.readingGuidance || '').trim().slice(0, 1200),
         themes: book.themes,
         book_map: book.bookMap || '',
         overall_vocab: book.overallVocab,
@@ -471,7 +511,7 @@ export default function NewBook() {
       }, { onConflict: 'id' })
       .select()
       .single();
-    if (error) { setBusy(''); setError(error.message); return; }
+    if (error) { setBusy(''); setError(databaseErrorMessage(error)); return; }
 
     // Photos are stored separately, one file per spread, so Stage 1 can
     // show the actual page while it reads — not just the extracted text.
@@ -501,6 +541,7 @@ export default function NewBook() {
       bookId: data.id,
       voice,
       characterVoices: book.characterVoices || {},
+      readingGuidance: book.readingGuidance || '',
       onProgress: (done, total) => setBusy(`읽어주기 음성 미리 준비 중... (${done}/${total})`),
     });
 
@@ -531,6 +572,7 @@ export default function NewBook() {
         </div>
 
         {error && <div className="banner">{error}</div>}
+        {deploymentIssue && <div className="banner">⚙️ {deploymentIssue}</div>}
         {note && <div className="banner info">{note}</div>}
         <p className="hint" style={{ margin: '0 0 12px' }}>
           이 책은 저장이 끝날 때까지 이 브라우저에 자동 임시저장됩니다.
@@ -555,6 +597,18 @@ export default function NewBook() {
           value={book.series || ''}
           onChange={(e) => setBook({ ...book, series: e.target.value })}
         />
+        <label className="label">책 전체 읽기 안내 (선택)</label>
+        <textarea
+          className="field"
+          rows={3}
+          maxLength={1200}
+          placeholder={'예: 엄마와 함께 읽으면서 같이 이야기해주세요. 웃긴 책이니 목소리 톤을 바꾸고 과장해서 재미있게 읽어주세요.'}
+          value={book.readingGuidance || ''}
+          onChange={(e) => setBook({ ...book, readingGuidance: e.target.value })}
+        />
+        <p className="hint" style={{ margin: '4px 0 14px' }}>
+          책 전체의 말투·속도·유머·강조 방식을 적으면 모든 페이지 음성과 책 이야기 대화에 반영됩니다.
+        </p>
         <p className="hint" style={{ margin: '4px 0 14px' }}>
           저자·시리즈를 채우고 "다시 정리하기"를 누르면, AI가 아는 책이면 그 배경지식을 실감나게 반영합니다.
         </p>
@@ -611,6 +665,7 @@ export default function NewBook() {
       </div>
 
       {error && <div className="banner">{error}</div>}
+      {deploymentIssue && <div className="banner">⚙️ {deploymentIssue}</div>}
 
       <h2>책 정보 (선택이지만, 넣으면 훨씬 실감나게 읽어줍니다)</h2>
       <label className="label">표지 사진으로 자동 채우기</label>
@@ -635,6 +690,18 @@ export default function NewBook() {
       <input className="field en" placeholder="예: Mo Willems" value={meta.author} onChange={(e) => setMeta({ ...meta, author: e.target.value })} />
       <label className="label">시리즈</label>
       <input className="field en" placeholder="예: Elephant & Piggie" value={meta.series} onChange={(e) => setMeta({ ...meta, series: e.target.value })} />
+      <label className="label">책 전체 읽기 안내</label>
+      <textarea
+        className="field"
+        rows={3}
+        maxLength={1200}
+        placeholder={'예: 엄마와 함께 읽으면서 같이 이야기해주세요. 웃긴 책이니 목소리 톤을 바꾸고 과장해서 재미있게 읽어주세요.'}
+        value={meta.readingGuidance || ''}
+        onChange={(e) => setMeta({ ...meta, readingGuidance: e.target.value })}
+      />
+      <p className="hint" style={{ margin: '4px 0 14px' }}>
+        입력하지 않으면 기존의 밝고 자연스러운 그림책 읽기 방식이 적용됩니다.
+      </p>
 
       <h2>방법 1 · 사진으로 만들기</h2>
       <p className="hint">
