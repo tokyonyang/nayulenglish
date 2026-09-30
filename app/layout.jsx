@@ -22,6 +22,10 @@ export default function RootLayout({ children }) {
   return (
     <html lang="ko">
       <head>
+    <meta
+    name="google-site-verification"
+    content="bwgkIr4KSBT6HHrOKdXvVcJOlI4tj2T3jmNS-CQR-40"
+  />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link
