@@ -1,12 +1,13 @@
 import './globals.css';
 
 export const metadata = {
-  title: '나율이의 영어책방',
-  description: '책 한 권으로, 하루 10분 영어 말하기',
+  title: 'hohobook',
+  description: '아이와 영어 그림책을 읽고 대화하는 개인 학습 도구',
+  applicationName: 'hohobook',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: '영어책방',
+    title: 'hohobook',
   },
 };
 

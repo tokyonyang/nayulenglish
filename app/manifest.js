@@ -1,8 +1,8 @@
 export default function manifest() {
   return {
-    name: '나율이의 영어책방',
-    short_name: '영어책방',
-    description: '책 한 권으로, 하루 10분 영어 말하기',
+    name: 'hohobook',
+    short_name: 'hohobook',
+    description: '아이와 영어 그림책을 읽고 대화하는 개인 학습 도구',
     start_url: '/',
     display: 'standalone',
     background_color: '#faf5ea',

@@ -38,9 +38,27 @@ export default function Home() {
     <>
       <header className="header">
         <div className="emoji">📖</div>
-        <h1>나율이의 영어책방</h1>
-        <p>책 한 권으로, 하루 10분 영어 말하기</p>
+        <h1>hohobook</h1>
+        <p>나율이의 영어책방 · 아이와 영어 그림책을 읽고 대화하는 개인 학습 도구</p>
       </header>
+
+      <section
+        style={{
+          margin: '18px 0 24px',
+          padding: '18px',
+          borderRadius: '18px',
+          background: 'rgba(255,255,255,0.7)',
+          lineHeight: 1.7,
+        }}
+      >
+        <h2 style={{ marginTop: 0 }}>hohobook 소개</h2>
+        <p style={{ marginBottom: 8 }}>
+          hohobook은 영어 그림책을 등록하고, 책 읽기와 대화 활동을 기록할 수 있도록 만든 개인 학습 도구입니다.
+        </p>
+        <p style={{ margin: 0 }}>
+          Google Drive 연동은 사용자가 앱에서 선택하거나 생성한 파일을 저장하고 불러오기 위한 용도로만 사용됩니다.
+        </p>
+      </section>
 
       {error && <div className="banner">{error}</div>}
 
@@ -80,6 +98,21 @@ export default function Home() {
       <Link href="/history" style={{ textDecoration: 'none' }}>
         <button className="btn-ghost" style={{ marginTop: 20 }}>📋 지난 리포트 모아보기</button>
       </Link>
+
+      <footer
+        style={{
+          marginTop: 40,
+          padding: '24px 0 8px',
+          textAlign: 'center',
+          fontSize: 14,
+          opacity: 0.8,
+        }}
+      >
+        <strong>hohobook</strong>
+        <div style={{ marginTop: 8 }}>
+          <Link href="/privacy">개인정보처리방침</Link>
+        </div>
+      </footer>
     </>
   );
 }
